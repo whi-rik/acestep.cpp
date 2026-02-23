@@ -257,7 +257,6 @@ VAE tiling (memory control):
   --vae-overlap <N>       Overlap frames per side (default: 64)
 
 Debug:
-  --noise-file <path>     Load noise from bf16 file (Philox RNG dump, batch=1 only)
   --dump <dir>            Dump intermediate tensors
 ```
 

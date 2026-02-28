@@ -21,10 +21,10 @@ endif()
 # ggml as subdirectory, inherits GGML_CUDA, GGML_METAL, etc. from cmake flags
 add_subdirectory(ggml)
 
-# Macro: link ggml backends + strict warnings (scoped to our targets, not ggml)
+# Shared compile options and ggml linkage
 macro(link_ggml_backends target)
     target_include_directories(${target} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
     target_include_directories(${target} SYSTEM PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/ggml/include
@@ -45,14 +45,22 @@ macro(link_ggml_backends target)
     endforeach()
 endmacro()
 
+# Core library (shared between binaries)
+add_library(acestep-core STATIC
+    src/request.cpp
+)
+link_ggml_backends(acestep-core)
+
 # dit-vae: full pipeline (text-enc + cond + dit + vae + wav)
-add_executable(dit-vae dit-vae.cpp request.cpp)
+add_executable(dit-vae tools/dit-vae.cpp)
+target_link_libraries(dit-vae PRIVATE acestep-core)
 link_ggml_backends(dit-vae)
 
 # ace-qwen3: LLM inference (CoT + audio codes)
-add_executable(ace-qwen3 ace-qwen3.cpp request.cpp)
+add_executable(ace-qwen3 tools/ace-qwen3.cpp)
+target_link_libraries(ace-qwen3 PRIVATE acestep-core)
 link_ggml_backends(ace-qwen3)
 
 # quantize: GGUF requantizer (BF16 -> K-quants)
-add_executable(quantize quantize.cpp)
+add_executable(quantize tools/quantize.cpp)
 link_ggml_backends(quantize)

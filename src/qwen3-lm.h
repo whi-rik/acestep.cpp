@@ -3,7 +3,7 @@
 // Loads from GGUF, supports prefill + decode, tied lm_head
 #pragma once
 
-#include "qwen3.h" // Qwen3Layer, Qwen3Config, layer build helpers
+#include "qwen3-enc.h" // Qwen3Layer, Qwen3Config, layer build helpers
 #include "ggml-alloc.h"
 #include "bpe.h"
 

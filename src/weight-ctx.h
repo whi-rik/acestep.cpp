@@ -1,8 +1,8 @@
 #pragma once
-// weight_ctx.h: format-independent weight loading context for ggml backends
+// weight-ctx.h: format-independent weight loading context for ggml backends
 //
 // Manages a ggml_context for weight tensors + their backend buffer.
-// Used by gguf_weights.h for all model loaders.
+// Used by gguf-weights.h for all model loaders.
 //
 // Usage:
 //   WeightCtx wctx;

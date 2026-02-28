@@ -1,4 +1,4 @@
-// cond.h: ACEStep Condition Encoder via ggml
+// cond-enc.h: ACEStep Condition Encoder via ggml
 //
 // Produces encoder_hidden_states [S_total, 2048] from (all arrays H-contiguous per token):
 //   - text_hidden [S_text, 1024]   : from Qwen3-Embedding text encoder
@@ -12,7 +12,7 @@
 //   Pack: cat(lyric, timbre[0:1], text_proj) -> [2048, S_total]
 
 #pragma once
-#include "qwen3.h"
+#include "qwen3-enc.h"
 
 // Lyric/Timbre encoder configs
 static Qwen3Config qwen3_lyric_config() {

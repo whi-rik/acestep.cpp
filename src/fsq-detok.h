@@ -1,4 +1,4 @@
-// tokenizer.h: FSQ + Detokenizer via ggml
+// fsq-detok.h: FSQ (Finite Scalar Quantization) detokenizer via ggml
 //
 // Decodes LM audio codes into context_latents for DiT:
 //   codes [T_5Hz] -> FSQ decode -> [T_5Hz, 6] -> project_out -> [T_5Hz, 2048]
@@ -9,7 +9,7 @@
 // Detokenizer reuses Qwen3 encoder infrastructure from qwen3.h
 
 #pragma once
-#include "qwen3.h"
+#include "qwen3-enc.h"
 
 // FSQ constants
 static const int FSQ_NDIMS = 6;

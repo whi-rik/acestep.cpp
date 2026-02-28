@@ -10,7 +10,7 @@
 #pragma once
 #include "ggml.h"
 #include "ggml-backend.h"
-#include "gguf_weights.h"
+#include "gguf-weights.h"
 #include "backend.h"
 #include <cmath>
 #include <cstdio>

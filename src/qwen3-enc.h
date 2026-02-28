@@ -1,4 +1,4 @@
-// qwen3.h: Qwen3 transformer encoder via ggml
+// qwen3-enc.h: Qwen3 transformer encoder via ggml
 //
 // Generic Qwen3 backbone used by:
 //   Text encoder  (Qwen3-Embedding-0.6B): 28L, H=1024, causal, vocab lookup
@@ -14,7 +14,7 @@
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "backend.h"
-#include "gguf_weights.h"
+#include "gguf-weights.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>

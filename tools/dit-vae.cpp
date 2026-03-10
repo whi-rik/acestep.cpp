@@ -16,6 +16,7 @@
 #include "vae-enc.h"
 #include "vae.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -283,9 +284,41 @@ int main(int argc, char ** argv) {
             fprintf(stderr, "[Request] ERROR: failed to parse %s, skipping\n", rpath);
             continue;
         }
-        if (req.caption.empty()) {
+        if (req.caption.empty() && req.lego.empty()) {
             fprintf(stderr, "[Request] ERROR: caption is empty in %s, skipping\n", rpath);
             continue;
+        }
+
+        // Lego mode validation (base model only, requires --src-audio)
+        bool is_lego = !req.lego.empty();
+        if (is_lego) {
+            if (!src_audio_path) {
+                fprintf(stderr, "[Lego] ERROR: lego requires --src-audio\n");
+                return 1;
+            }
+            if (is_turbo) {
+                fprintf(stderr, "[Lego] ERROR: lego requires the base DiT model (turbo detected)\n");
+                return 1;
+            }
+            // Reference project: TRACK_NAMES (constants.py)
+            static const char * allowed[] = {
+                "vocals",     "backing_vocals", "drums", "bass", "guitar", "keyboard",
+                "percussion", "strings",        "synth", "fx",   "brass",  "woodwinds",
+            };
+            bool valid = false;
+            for (int k = 0; k < 12; k++) {
+                if (req.lego == allowed[k]) {
+                    valid = true;
+                    break;
+                }
+            }
+            if (!valid) {
+                fprintf(stderr, "[Lego] ERROR: '%s' is not a valid track name\n", req.lego.c_str());
+                fprintf(stderr,
+                        "  Valid: vocals, backing_vocals, drums, bass, guitar, keyboard,\n"
+                        "         percussion, strings, synth, fx, brass, woodwinds\n");
+                return 1;
+            }
         }
 
         // Extract params
@@ -406,19 +439,36 @@ int main(int argc, char ** argv) {
         }
 
         // 2. Build formatted prompts
-        // Reference project uses opposite-sounding instructions (constants.py):
+        // Reference project instruction templates (constants.py TASK_INSTRUCTIONS):
         //   text2music = "Fill the audio semantic mask..."
         //   cover      = "Generate audio semantic tokens..."
         //   repaint    = "Repaint the mask area..."
+        //   lego       = "Generate the {TRACK_NAME} track based on the audio context:"
         // Auto-switches to cover when audio_codes are present
-        bool         is_cover    = have_cover || !codes_vec.empty();
-        const char * instruction = is_repaint ? "Repaint the mask area based on the given conditions:" :
-                                   is_cover   ? "Generate audio semantic tokens based on the given conditions:" :
-                                                "Fill the audio semantic mask based on the given conditions:";
-        char         metas[512];
+        bool        is_cover = have_cover || !codes_vec.empty();
+        std::string instruction_str;
+        if (is_lego) {
+            // Lego mode: force audio_cover_strength=1.0 so all DiT steps see the source audio
+            req.audio_cover_strength = 1.0f;
+            fprintf(stderr, "[Lego] track=%s, cover path, strength=1.0\n", req.lego.c_str());
+            // Reference project (task_utils.py:86): track name is UPPERCASE
+            std::string track_upper = req.lego;
+            for (char & c : track_upper) {
+                c = (char) toupper((unsigned char) c);
+            }
+            instruction_str = "Generate the " + track_upper + " track based on the audio context:";
+        } else if (is_repaint) {
+            instruction_str = "Repaint the mask area based on the given conditions:";
+        } else if (is_cover) {
+            instruction_str = "Generate audio semantic tokens based on the given conditions:";
+        } else {
+            instruction_str = "Fill the audio semantic mask based on the given conditions:";
+        }
+
+        char metas[512];
         snprintf(metas, sizeof(metas), "- bpm: %s\n- timesignature: %s\n- keyscale: %s\n- duration: %d seconds\n", bpm,
                  timesig, keyscale, (int) duration);
-        std::string text_str = std::string("# Instruction\n") + instruction + "\n\n" + "# Caption\n" + caption +
+        std::string text_str = std::string("# Instruction\n") + instruction_str + "\n\n" + "# Caption\n" + caption +
                                "\n\n" + "# Metas\n" + metas + "<|endoftext|>\n";
 
         std::string lyric_str = std::string("# Languages\n") + language + "\n\n# Lyric\n" + lyrics + "<|endoftext|>";
@@ -536,7 +586,7 @@ int main(int argc, char ** argv) {
         }
 
         // Build context: [T, ctx_ch] = src_latents[64] + chunk_mask[64]
-        // Cover:     src = cover_latents, mask = 1.0 everywhere
+        // Cover/Lego: src = cover_latents, mask = 1.0 everywhere
         // Repaint:   src = silence in region / cover outside, mask = 1.0 in region / 0.0 outside
         // Passthrough: detokenized FSQ codes + silence padding, mask = 1.0
         // Text2music: silence only, mask = 1.0

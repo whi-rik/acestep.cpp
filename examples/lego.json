@@ -1,0 +1,8 @@
+{
+    "caption": "",
+    "lyrics": "[Instrumental]",
+    "lego": "guitar",
+    "inference_steps": 50,
+    "guidance_scale": 7.0,
+    "shift": 1.0
+}

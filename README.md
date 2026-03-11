@@ -631,16 +631,15 @@ Required:
 Output:
   -o <json>               Output JSON (default: stdout summary)
 
-Sampling:
-  --temperature <float>   Sampling temperature (default: 0.3)
-  --top-p <float>         Nucleus sampling (default: 0.9)
-  --top-k <int>           Top-k sampling (default: 0 = disabled)
+Sampling params (seed, lm_temperature, lm_top_p, lm_top_k) come from the
+request JSON. Without --request, understand defaults apply (temperature=0.3).
 
 VAE tiling:
   --vae-chunk <N>         Latent frames per tile (default: 256)
   --vae-overlap <N>       Overlap frames per side (default: 64)
 
 Debug:
+  --max-seq <N>           KV cache size (default: 8192)
   --no-fsm                Disable FSM constrained decoding
   --no-fa                 Disable flash attention
 ```
@@ -670,6 +669,8 @@ ace-understand (reverse pipeline)
   VAE encode (tiled, AutoencoderOobleck encoder)
   FSQ tokenize (latent -> 5Hz codes via 2L attention pooler)
   Qwen3 LM (understand prompt: codes -> CoT metadata + lyrics)
+  FSM constrains CoT fields, audio codes blocked after </think>
+  No CFG, no batch. Single sequence, greedy-ish (temperature=0.3)
   Output: JSON with caption, lyrics, bpm, key, duration, language
 ```
 

@@ -210,16 +210,15 @@ static void usage(const char * prog) {
             "Output:\n"
             "  -o <json>               Output JSON (default: stdout summary)\n"
             "\n"
-            "Sampling:\n"
-            "  --temperature <float>   Sampling temperature (default: 0.3)\n"
-            "  --top-p <float>         Nucleus sampling (default: 0.9)\n"
-            "  --top-k <int>           Top-k sampling (default: 0 = disabled)\n"
+            "Sampling params (seed, lm_temperature, lm_top_p, lm_top_k) come from the\n"
+            "request JSON. Without --request, understand defaults apply (temperature=0.3).\n"
             "\n"
             "VAE tiling:\n"
             "  --vae-chunk <N>         Latent frames per tile (default: 256)\n"
             "  --vae-overlap <N>       Overlap frames per side (default: 64)\n"
             "\n"
             "Debug:\n"
+            "  --max-seq <N>           KV cache size (default: 8192)\n"
             "  --no-fsm                Disable FSM constrained decoding\n"
             "  --no-fa                 Disable flash attention\n",
             prog);
@@ -232,9 +231,7 @@ int main(int argc, char ** argv) {
     const char * request_path   = nullptr;
     const char * model_path     = nullptr;
     const char * output_path    = nullptr;
-    float        temperature    = 0.3f;  // lower than generation, more deterministic
-    float        top_p          = 0.9f;
-    int          top_k          = 0;
+    int          max_seq        = 8192;
     int          vae_chunk      = 256;
     int          vae_overlap    = 64;
     bool         use_fsm        = true;
@@ -258,12 +255,8 @@ int main(int argc, char ** argv) {
             model_path = argv[++i];
         } else if (!strcmp(argv[i], "-o") && i + 1 < argc) {
             output_path = argv[++i];
-        } else if (!strcmp(argv[i], "--temperature") && i + 1 < argc) {
-            temperature = (float) atof(argv[++i]);
-        } else if (!strcmp(argv[i], "--top-p") && i + 1 < argc) {
-            top_p = (float) atof(argv[++i]);
-        } else if (!strcmp(argv[i], "--top-k") && i + 1 < argc) {
-            top_k = atoi(argv[++i]);
+        } else if (!strcmp(argv[i], "--max-seq") && i + 1 < argc) {
+            max_seq = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--vae-chunk") && i + 1 < argc) {
             vae_chunk = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--vae-overlap") && i + 1 < argc) {
@@ -297,12 +290,40 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
+    // Parse request JSON (if provided). Sampling params come from JSON.
+    // When no JSON, understand defaults apply (temperature=0.3 for transcription).
+    AceRequest req;
+    request_init(&req);
+    req.lm_temperature = 0.3f;  // understand default: lower than generation
+    if (request_path) {
+        if (!request_parse(&req, request_path)) {
+            return 1;
+        }
+    }
+
+    // Resolve seed (same as ace-qwen3)
+    long long seed = req.seed;
+    if (seed < 0) {
+        std::random_device rd;
+        seed = (int64_t) rd() << 32 | rd();
+        if (seed < 0) {
+            seed = -seed;
+        }
+    }
+
+    // Generation params from request
+    float temperature = req.lm_temperature;
+    float top_p       = req.lm_top_p;
+    int   top_k       = req.lm_top_k;
+
     Timer            t_total;
     std::vector<int> codes;
 
-    // Step 1: get audio codes (either from audio file or from JSON)
+    // Step 1: get audio codes
+    // --src-audio: full pipeline (VAE encode + FSQ tokenize)
+    // --request without --src-audio: parse audio_codes from JSON
+    // --request + --src-audio: audio from file, params from JSON
     if (src_audio_path) {
-        // Full pipeline: audio -> VAE encode -> FSQ tokenize -> codes
         fprintf(stderr, "[Understand] Source: %s\n", src_audio_path);
 
         // Read and resample audio to 48kHz stereo
@@ -384,11 +405,6 @@ int main(int argc, char ** argv) {
 
     } else {
         // Codes from JSON: parse audio_codes string "3101,11837,..."
-        AceRequest req;
-        request_init(&req);
-        if (!request_parse(&req, request_path)) {
-            return 1;
-        }
         if (req.audio_codes.empty()) {
             fprintf(stderr, "[Request] ERROR: audio_codes is empty in %s\n", request_path);
             return 1;
@@ -410,11 +426,12 @@ int main(int argc, char ** argv) {
 
     Timer   t_load;
     Qwen3LM model;
-    if (!qw3lm_load(&model, model_path, 8192, 1)) {
+    if (!qw3lm_load(&model, model_path, max_seq, 1)) {
         return 1;
     }
     model.use_flash_attn = use_fa;
-    fprintf(stderr, "[Load] LM: %.0fms\n", t_load.ms());
+    double load_ms       = t_load.ms();
+    fprintf(stderr, "[Load] LM: %.0fms\n", load_ms);
 
     int V = model.cfg.vocab_size;
 
@@ -435,13 +452,13 @@ int main(int argc, char ** argv) {
     Timer              t_gen;
     std::vector<float> logits(V);
     qw3lm_forward(&model, prompt.data(), (int) prompt.size(), 0, logits.data());
-    fprintf(stderr, "[Prefill] %.0fms\n", t_gen.ms());
+    fprintf(stderr, "[Prefill] %.0fms, %zu tokens, seed=%lld\n", t_gen.ms(), prompt.size(), seed);
 
     // Step 5: autoregressive decode
     // No CFG, no batch. Single sequence, stop at <|im_end|>.
     // FSM constrains the CoT metadata block (<think>...</think>).
     // After </think>, generate free-form lyrics with audio codes blocked.
-    std::mt19937     rng(42);
+    std::mt19937     rng((uint32_t) seed);
     std::vector<int> gen_tokens;
     bool             past_think = false;
     int              max_tokens = 4096;
@@ -528,6 +545,6 @@ int main(int argc, char ** argv) {
         request_write(&out, output_path);
     }
 
-    fprintf(stderr, "\n[Understand] Total: %.0fms\n", t_total.ms());
+    fprintf(stderr, "\n[Understand] Load %.0f | Total %.0fms | seed=%lld\n", load_ms, t_total.ms(), seed);
     return 0;
 }

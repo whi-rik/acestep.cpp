@@ -32,7 +32,7 @@ cmake .. -DGGML_CUDA=ON -DGGML_BLAS=ON
 cmake --build . --config Release -j$(nproc)
 ```
 
-Builds four binaries: `ace-qwen3` (LLM), `dit-vae` (DiT + VAE), `neural-codec` (VAE encode/decode) and `mp3-codec` (MP3 encoder/decoder).
+Builds five binaries: `ace-qwen3` (LLM), `dit-vae` (DiT + VAE), `ace-understand` (reverse: audio -> metadata), `neural-codec` (VAE encode/decode) and `mp3-codec` (MP3 encoder/decoder).
 
 ## Models
 
@@ -606,6 +606,45 @@ Examples:
   mp3-codec -i song.mp3 -o song.wav
 ```
 
+## ace-understand reference
+
+Reverse pipeline: audio (or pre-existing audio codes) -> LM understand ->
+metadata + lyrics. The output JSON is reusable as ace-qwen3 or dit-vae input.
+
+Two input modes: `--src-audio` runs the full chain (VAE encode + FSQ tokenize +
+LM), `--request` with an `audio_codes` field skips straight to the LM.
+
+```
+Usage: ace-understand [--src-audio <file> --dit <gguf> --vae <gguf> | --request <json>] --model <gguf>
+
+Audio input (full pipeline):
+  --src-audio <file>      Source audio (WAV or MP3, any sample rate)
+  --dit <gguf>            DiT GGUF (for FSQ tokenizer weights + silence_latent)
+  --vae <gguf>            VAE GGUF (for audio encoding)
+
+Code input (skip VAE + tokenizer):
+  --request <json>        Request JSON with audio_codes field
+
+Required:
+  --model <gguf>          5Hz LM GGUF (same model as ace-qwen3)
+
+Output:
+  -o <json>               Output JSON (default: stdout summary)
+
+Sampling:
+  --temperature <float>   Sampling temperature (default: 0.3)
+  --top-p <float>         Nucleus sampling (default: 0.9)
+  --top-k <int>           Top-k sampling (default: 0 = disabled)
+
+VAE tiling:
+  --vae-chunk <N>         Latent frames per tile (default: 256)
+  --vae-overlap <N>       Overlap frames per side (default: 64)
+
+Debug:
+  --no-fsm                Disable FSM constrained decoding
+  --no-fa                 Disable flash attention
+```
+
 ## Architecture
 
 ```
@@ -625,16 +664,23 @@ dit-vae
   DiT (24L flow matching, Euler steps)
   VAE (AutoencoderOobleck, tiled decode)
   WAV stereo 48kHz
+
+ace-understand (reverse pipeline)
+  Audio read (WAV/MP3, any rate -> 48kHz stereo)
+  VAE encode (tiled, AutoencoderOobleck encoder)
+  FSQ tokenize (latent -> 5Hz codes via 2L attention pooler)
+  Qwen3 LM (understand prompt: codes -> CoT metadata + lyrics)
+  Output: JSON with caption, lyrics, bpm, key, duration, language
 ```
 
 ## Roadmap
 
 Started as "can GGML even sing?". It can. Now make it do more.
 
-- [ ] **Understand mode**: audio codes -> metadata + lyrics (reverse of generation)
+- [x] **Understand mode**: audio codes -> metadata + lyrics (reverse of generation)
 - [x] **LoRA**: adapter loading for fine-tuned DiT models
 - [ ] **JSON HTTP server**: minimal API, stable contract
-- [ ] **Audio I/O**: built-in MP3 encode/decode if a clean MIT library exists, otherwise ffmpeg does the job
+- [x] **Audio I/O**: built-in MIT MP3 encoder (quality close to LAME, perf TODO) + minimp3 decoder, no ffmpeg needed
 - [ ] **Documentation split**: README (user guide) + ARCHITECTURE.md (internals) when a UI exists
 - [ ] **ACE-Step 2.0**: evaluate architecture delta, add headers/weights as needed
 
@@ -656,10 +702,13 @@ duration, language) and optionally lyrics via chain-of-thought reasoning. An FSM
 (finite state machine) built from a prefix tree enforces valid field names and values
 at every decode step, hard-masking invalid tokens before sampling.
 
-Phase 2 (audio codes) generates 5Hz FSQ tokens from a 65535-code vocabulary appended
-to the base Qwen3 tokenizer. A partial LM head projects only the audio code subrange
-of the embedding matrix, cutting the output GEMM by 70% compared to full-vocab
-projection. Classifier-free guidance (CFG) is fused into the batch dimension: N
+Phase 2 (audio codes) generates 5Hz FSQ tokens. The FSQ codec uses levels
+[8,8,8,5,5,5] producing 64000 distinct codes (8*8*8*5*5*5). The tokenizer
+reserves 65535 slots (audio_code_0 to audio_code_65534) appended to the base
+Qwen3 vocabulary; the 1535 extra slots are unused by the codec. A partial LM
+head projects only the audio code subrange of the embedding matrix, cutting
+the output GEMM by 70% compared to full-vocab projection.
+Classifier-free guidance (CFG) is fused into the batch dimension: N
 conditional and N unconditional sequences are packed into a single forward pass
 (2*N tokens, one weight read), then combined as
 `logits = uncond + scale * (cond - uncond)`. The KV cache is a single 4D tensor

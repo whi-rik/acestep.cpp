@@ -73,6 +73,10 @@ add_executable(ace-qwen3 tools/ace-qwen3.cpp)
 target_link_libraries(ace-qwen3 PRIVATE acestep-core)
 link_ggml_backends(ace-qwen3)
 
+add_executable(ace-understand tools/ace-understand.cpp)
+target_link_libraries(ace-understand PRIVATE acestep-core)
+link_ggml_backends(ace-understand)
+
 # quantize: GGUF requantizer (BF16 -> K-quants)
 add_executable(quantize tools/quantize.cpp)
 link_ggml_backends(quantize)

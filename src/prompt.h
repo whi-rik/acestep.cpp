@@ -335,3 +335,33 @@ static std::vector<int> build_custom_prompt(BPETokenizer & bpe, const char * sys
     append("assistant\n");
     return ids;
 }
+
+// Understand system instruction (reverse: audio codes -> metadata + lyrics)
+static const char * LM_UNDERSTAND_INSTRUCTION =
+    "Understand the given musical conditions and describe the audio semantics accordingly:";
+
+// Build understand prompt: system instruction + raw audio code tokens as user input.
+// codes[] are FSQ indices (from tok_ggml_encode or parsed from audio_codes string).
+// They become token IDs AUDIO_CODE_BASE + codes[i] in the user turn.
+static std::vector<int> build_understand_prompt(BPETokenizer & bpe, const int * codes, int n_codes) {
+    std::vector<int> ids;
+    auto             append = [&](const std::string & text) {
+        auto t = bpe_encode(&bpe, text, false);
+        ids.insert(ids.end(), t.begin(), t.end());
+    };
+    ids.push_back(TOKEN_IM_START);
+    append(std::string("system\n# Instruction\n") + LM_UNDERSTAND_INSTRUCTION + "\n\n");
+    ids.push_back(TOKEN_IM_END);
+    append("\n");
+    ids.push_back(TOKEN_IM_START);
+    append("user\n");
+    for (int i = 0; i < n_codes; i++) {
+        ids.push_back(AUDIO_CODE_BASE + codes[i]);
+    }
+    append("\n");
+    ids.push_back(TOKEN_IM_END);
+    append("\n");
+    ids.push_back(TOKEN_IM_START);
+    append("assistant\n");
+    return ids;
+}

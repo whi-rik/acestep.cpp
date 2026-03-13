@@ -11,6 +11,7 @@
 
 #include "audio-io.h"
 #include "bpe.h"
+#include "debug.h"
 #include "fsq-tok.h"
 #include "gguf-weights.h"
 #include "metadata-fsm.h"
@@ -19,7 +20,6 @@
 #include "request.h"
 #include "timer.h"
 #include "vae-enc.h"
-#include "debug.h"
 
 #include <algorithm>
 #include <cmath>

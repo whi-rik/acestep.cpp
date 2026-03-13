@@ -76,7 +76,9 @@ static BackendPair backend_init(const char * label) {
         exit(1);
     }
     int n_threads = (int) std::thread::hardware_concurrency() / 2;
-    if (n_threads < 1) { n_threads = 1; }
+    if (n_threads < 1) {
+        n_threads = 1;
+    }
     fprintf(stderr, "[Load] %s backend: %s (CPU threads: %d)\n", label, ggml_backend_name(bp.backend), n_threads);
 
     bp.gpu_cc = 0;

@@ -397,9 +397,15 @@ static std::string audio_encode_mp3(const float * audio,
     }
 
     // per-thread sample ranges, aligned to 1152 (MP3 frame boundary).
-    // each thread gets its own encoder: independent bit reservoir, filter state.
-    // boundary cost: ~32 samples of filter warmup + reservoir reset per chunk.
-    // at 48kHz that is < 1ms of audio, totally inaudible.
+    // each thread gets its own encoder instance. threads > 0 pre-encode
+    // warmup frames from before their start to prime the filterbank, MDCT
+    // overlap, and psy state. the warmup output is discarded via flush.
+    // after flush, pending_bytes=0 so the first real frame naturally gets
+    // main_data_begin=0 (self-contained, no reservoir reference). cost:
+    // one frame of lost reservoir per boundary (~26ms of slightly lower
+    // quality), but filter/MDCT/psy are fully primed = no audible gap.
+    static const int WARMUP_FRAMES = 3;
+
     struct chunk_range {
         int start;
         int end;
@@ -426,8 +432,8 @@ static std::string audio_encode_mp3(const float * audio,
     // feeds 1-second sub-chunks for cancel responsiveness.
     auto worker = [&](int tid) {
         int chunk_start = ranges[tid].start;
-        int chunk_len   = ranges[tid].end - chunk_start;
-        if (chunk_len <= 0) {
+        int chunk_end   = ranges[tid].end;
+        if (chunk_end <= chunk_start) {
             return;
         }
 
@@ -436,14 +442,44 @@ static std::string audio_encode_mp3(const float * audio,
             return;
         }
 
-        int sub = enc_sr;  // ~1 second
+        // warmup: encode frames from before chunk_start to prime encoder
+        // state (filter, sb_prev, psy). output is discarded via flush.
+        // warmup length is exact multiple of 1152 so pcm_fill=0 after.
+        if (tid > 0 && chunk_start > 0) {
+            int n_warm = WARMUP_FRAMES;
+            if (n_warm > chunk_start / 1152) {
+                n_warm = chunk_start / 1152;
+            }
+            if (n_warm > 0) {
+                int warm_len   = n_warm * 1152;
+                int warm_start = chunk_start - warm_len;
+
+                float * buf = (float *) malloc((size_t) warm_len * 2 * sizeof(float));
+                memcpy(buf, enc_audio + warm_start, (size_t) warm_len * sizeof(float));
+                memcpy(buf + warm_len, enc_audio + enc_T + warm_start, (size_t) warm_len * sizeof(float));
+
+                int sz = 0;
+                mp3enc_encode(e, buf, warm_len, &sz);
+                free(buf);
+            }
+
+            // flush: output and discard warmup frames. after this,
+            // pending_bytes=0 so next frame gets main_data_begin=0
+            // naturally. filter and sb_prev state are preserved.
+            int flush_sz = 0;
+            mp3enc_flush(e, &flush_sz);
+            e->out_written = 0;
+        }
+
+        // encode real chunk
+        int chunk_len = chunk_end - chunk_start;
+        int sub       = enc_sr;  // ~1 second
         for (int p = 0; p < chunk_len; p += sub) {
             if (cancel && cancel(cancel_data)) {
                 break;
             }
             int len = (p + sub <= chunk_len) ? sub : (chunk_len - p);
 
-            // build planar sub-chunk: [L: len][R: len]
             float * buf = (float *) malloc((size_t) len * 2 * sizeof(float));
             memcpy(buf, enc_audio + chunk_start + p, (size_t) len * sizeof(float));
             memcpy(buf + len, enc_audio + enc_T + chunk_start + p, (size_t) len * sizeof(float));

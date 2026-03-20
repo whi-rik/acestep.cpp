@@ -39,6 +39,12 @@ struct Qwen3LM {
     // lm_head = embed_tokens when tie_embeddings
     Qwen3Layer           layers[QW3LM_MAX_LAYERS];
 
+    // Partial LM head: contiguous copy of embed_tokens rows [lm_offset..V).
+    // Avoids ggml_view_2d on quantized weights in mul_mat (broken on ROCm/HIP).
+    struct ggml_tensor *  lm_head_phase2;  // [H, V-lm_offset] same type as embed_tokens, or NULL
+    struct ggml_context * lm_head_ctx;
+    ggml_backend_buffer_t lm_head_buf;
+
     WeightCtx            wctx;
     ggml_backend_t       backend;
     ggml_backend_t       cpu_backend;
@@ -274,6 +280,44 @@ static bool qw3lm_load(Qwen3LM * m, const char * gguf_path, int max_seq_len, int
     // KV cache
     qw3lm_alloc_kv_cache(m, n_kv_sets > 0 ? n_kv_sets : 1);
 
+    return true;
+}
+
+// Pre-extract partial LM head rows [lm_offset..V) into a contiguous GPU tensor.
+// Avoids ggml_view_2d on quantized weights at inference time (broken on ROCm/HIP).
+// Call after qw3lm_load. Cost: one GPU alloc + CPU-mediated copy (~170 MB for Q8_0 4B).
+static bool qw3lm_build_partial_head(Qwen3LM * m, int lm_offset) {
+    int H        = m->cfg.hidden_size;
+    int V        = m->cfg.vocab_size;
+    int lm_count = V - lm_offset;
+    if (lm_count <= 0 || lm_count >= V) {
+        return false;
+    }
+
+    struct ggml_init_params ctx_params = { ggml_tensor_overhead() + 16, NULL, true };
+    m->lm_head_ctx = ggml_init(ctx_params);
+    m->lm_head_phase2 = ggml_new_tensor_2d(m->lm_head_ctx, m->embed_tokens->type, H, lm_count);
+    ggml_set_name(m->lm_head_phase2, "lm_head_phase2");
+
+    m->lm_head_buf = ggml_backend_alloc_ctx_tensors(m->lm_head_ctx, m->backend);
+    if (!m->lm_head_buf) {
+        fprintf(stderr, "[LM] WARNING: failed to allocate partial head buffer, using full vocab\n");
+        ggml_free(m->lm_head_ctx);
+        m->lm_head_ctx    = NULL;
+        m->lm_head_phase2 = NULL;
+        return false;
+    }
+    ggml_backend_buffer_set_usage(m->lm_head_buf, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
+    // Copy rows [lm_offset..V) from embed_tokens (GPU -> CPU -> GPU)
+    size_t row_bytes = ggml_row_size(m->embed_tokens->type, H);
+    size_t nbytes    = (size_t) lm_count * row_bytes;
+    std::vector<uint8_t> tmp(nbytes);
+    ggml_backend_tensor_get(m->embed_tokens, tmp.data(), (size_t) lm_offset * row_bytes, nbytes);
+    ggml_backend_tensor_set(m->lm_head_phase2, tmp.data(), 0, nbytes);
+
+    fprintf(stderr, "[LM] Partial head: %d rows (%d..%d), %.1f MB\n",
+            lm_count, lm_offset, V, (float) nbytes / (1024 * 1024));
     return true;
 }
 
@@ -678,10 +722,12 @@ static void qw3lm_forward_batch(Qwen3LM *   m,
     hidden                         = qwen3_rms_norm(ctx, hidden, m->final_norm, c.rms_norm_eps);
     int                  out_V     = (lm_count > 0) ? lm_count : c.vocab_size;
     struct ggml_tensor * lm_weight = m->embed_tokens;
-    if (lm_count > 0) {
-        // Partial projection: only [lm_offset..lm_offset+lm_count) rows
-        lm_weight = ggml_view_2d(ctx, m->embed_tokens, m->embed_tokens->ne[0], lm_count, m->embed_tokens->nb[1],
-                                 (int64_t) lm_offset * m->embed_tokens->nb[1]);
+    if (lm_count > 0 && m->lm_head_phase2) {
+        // Pre-extracted partial head: contiguous tensor, no view needed
+        lm_weight = m->lm_head_phase2;
+    } else if (lm_count > 0) {
+        // No pre-extracted head available, fall back to full vocab
+        out_V = c.vocab_size;
     }
     struct ggml_tensor * lgt = ggml_mul_mat(ctx, lm_weight, hidden);  // [out_V, N]
     ggml_set_name(lgt, "logits");
@@ -738,6 +784,12 @@ static void qw3lm_forward_batch(Qwen3LM *   m,
 static void qw3lm_free(Qwen3LM * m) {
     if (m->sched) {
         ggml_backend_sched_free(m->sched);
+    }
+    if (m->lm_head_buf) {
+        ggml_backend_buffer_free(m->lm_head_buf);
+    }
+    if (m->lm_head_ctx) {
+        ggml_free(m->lm_head_ctx);
     }
     if (m->kv_buf) {
         ggml_backend_buffer_free(m->kv_buf);

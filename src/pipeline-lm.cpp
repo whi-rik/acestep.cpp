@@ -393,22 +393,28 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
         uncond_sets[i] = N + i;
     }
 
-    // Batched decode loop, partial LM head: only project [TOKEN_IM_END..V)
+    // Batched decode loop.
+    // partial head: pre-extracted contiguous tensor for [TOKEN_IM_END..V) rows.
+    // When unavailable (alloc failed): full vocab, slightly more compute, same result.
     Timer t_decode;
-    int   V_eff = V - TOKEN_IM_END;
+    bool  partial    = (m->lm_head_phase2 != NULL);
+    int   out_V       = partial ? (V - TOKEN_IM_END) : V;
+    int   lm_offset   = partial ? TOKEN_IM_END : 0;
+    int   lm_count    = partial ? (V - TOKEN_IM_END) : 0;
+    int   eos_idx     = partial ? 0 : TOKEN_IM_END;
+    int   code_offset = partial ? (AUDIO_CODE_BASE - TOKEN_IM_END) : AUDIO_CODE_BASE;
 
     // Pre-allocate batched arrays for the maximum possible size (N or 2*N for CFG)
     int                max_N2 = use_cfg ? 2 * N : N;
     std::vector<int>   batch_tokens(max_N2);
     std::vector<int>   batch_sets(max_N2);
-    std::vector<float> batch_logits((size_t) V_eff * max_N2);
+    std::vector<float> batch_logits((size_t) out_V * max_N2);
 
     // This array maps the compact "active" index back to the original sequence index (0 to N-1)
     std::vector<int> active_to_orig(N);
 
     // Tiny array for CPU sampling (EOS token + Audio Codes) to prevent sorting 150,000 text logits
-    int                audio_code_offset = AUDIO_CODE_BASE - TOKEN_IM_END;
-    int                compact_V         = AUDIO_CODE_COUNT + 1;
+    int                compact_V = AUDIO_CODE_COUNT + 1;
     std::vector<float> compact_logits(compact_V);
 
     int n_active = N;
@@ -449,31 +455,31 @@ static std::vector<std::string> run_phase2_batch(Qwen3LM *                      
         // 2. FORWARD PASS: GPU only computes attention for n_active sequences
         int actual_batch_size = use_cfg ? (2 * n_active) : n_active;
         qw3lm_forward_batch(m, batch_tokens.data(), batch_sets.data(), actual_batch_size, batch_logits.data(),
-                            TOKEN_IM_END, V_eff);
+                            lm_offset, lm_count);
 
         // 3. TARGETED CFG & LOGIT EXTRACTION
         for (int a = 0; a < n_active; a++) {
             int orig_i = active_to_orig[a];  // Map back to original sequence object
 
             // Pointer to the conditional logits for THIS active sequence
-            float * lc = batch_logits.data() + (size_t) a * V_eff;
+            float * lc = batch_logits.data() + (size_t) a * out_V;
 
             if (use_cfg) {
                 // Pointer to the unconditional logits (offset by n_active)
-                float * lu = batch_logits.data() + (size_t) (n_active + a) * V_eff;
+                float * lu = batch_logits.data() + (size_t) (n_active + a) * out_V;
 
                 // Targeted CFG Math: Only apply it to EOS + Audio Codes. Skip the 150,000 text tokens!
-                lc[0] = lu[0] + cfg_scale * (lc[0] - lu[0]);  // EOS token
+                lc[eos_idx] = lu[eos_idx] + cfg_scale * (lc[eos_idx] - lu[eos_idx]);  // EOS token
                 for (int c = 0; c < AUDIO_CODE_COUNT; c++) {
-                    int idx = audio_code_offset + c;
+                    int idx = code_offset + c;
                     lc[idx] = lu[idx] + cfg_scale * (lc[idx] - lu[idx]);
                 }
             }
 
             // Extract ONLY the valid target tokens into the tiny compact array
-            compact_logits[0] = lc[0];
+            compact_logits[0] = lc[eos_idx];
             for (int c = 0; c < AUDIO_CODE_COUNT; c++) {
-                compact_logits[c + 1] = lc[audio_code_offset + c];
+                compact_logits[c + 1] = lc[code_offset + c];
             }
 
             // CPU samples instantly because it only has to sort ~2049 items instead of 150,000+
@@ -558,6 +564,10 @@ AceLm * ace_lm_load(const AceLmParams * params) {
         return NULL;
     }
     ctx->model.use_flash_attn = params->use_fa;
+
+    // Pre-extract partial LM head for phase2 (audio code tokens only).
+    // Uses a contiguous GPU tensor instead of ggml_view_2d on quantized weights.
+    qw3lm_build_partial_head(&ctx->model, TOKEN_IM_END);
 
     // Init FSM (needs BPE + vocab size from loaded model)
     if (params->use_fsm) {

@@ -76,21 +76,21 @@
 
 <style>
 	:global(:root) {
-		--bg: #1a1a2e;
-		--bg-input: #16213e;
-		--bg-card: #1e2a45;
-		--bg-btn: #0f3460;
-		--bg-btn-hover: #1a4a8a;
-		--fg: #fff;
-		--fg-dim: #8a8aa0;
-		--border: #2a2a4a;
+		--bg: #1a1a1a;
+		--bg-input: #2a2a2a;
+		--bg-card: #242424;
+		--bg-btn: #333;
+		--bg-btn-hover: #444;
+		--fg: #eee;
+		--fg-dim: #999;
+		--border: #3a3a3a;
 		--focus: #2ed573;
 		--error: #ff6b6b;
 		--color-ok: #2ed573;
 		--color-sleep: #ffa502;
 		--color-disabled: #ff4757;
 		--color-off: #555;
-		--waveform-dim: #4a4a6a;
+		--waveform-dim: #555;
 		--waveform-play: #2ed573;
 		color-scheme: dark;
 	}

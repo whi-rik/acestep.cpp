@@ -107,11 +107,11 @@
 				onchange={toggleRef}
 				title="Use as reference audio"
 			/>
-			<button class="icon-btn" onclick={load} title="Edit"><Pencil size={14} /></button>
-			<button class="icon-btn" onclick={downloadAudio} title="Download"
+			<button class="icon-btn" onclick={load} title="Edit prompt"><Pencil size={14} /></button>
+			<button class="icon-btn" onclick={downloadAudio} title="Download track"
 				><Download size={14} /></button
 			>
-			<button class="icon-btn" onclick={remove} title="Delete"><Trash2 size={14} /></button>
+			<button class="icon-btn" onclick={remove} title="Delete track"><Trash2 size={14} /></button>
 		</div>
 	</div>
 	<Waveform

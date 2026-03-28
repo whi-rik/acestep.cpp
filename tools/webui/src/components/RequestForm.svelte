@@ -312,9 +312,14 @@
 		hidden
 	/>
 	<div class="toolbar">
-		<button type="button" onclick={importJson} title="Open"><FolderOpen size={14} /> Open</button>
-		<button type="button" onclick={exportJson} title="Save"><Download size={14} /> Save</button>
-		<button type="button" onclick={reset} title="Reset"><RotateCcw size={14} /> Reset</button>
+		<button type="button" onclick={importJson} title="Open JSON prompt, MP3 or WAV"
+			><FolderOpen size={14} /> Open</button
+		>
+		<button type="button" onclick={exportJson} title="Save JSON prompt"
+			><Download size={14} /> Save</button
+		>
+		<button type="button" onclick={reset} title="Reset prompt"><RotateCcw size={14} /> Reset</button
+		>
 	</div>
 
 	<label class="section-label"

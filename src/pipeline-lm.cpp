@@ -706,32 +706,27 @@ int ace_lm_generate(AceLm *            ctx,
         MetadataFSM * active_fsm = nullptr;
 
         if (ctx->params.use_fsm) {
-            if (gen_lyrics) {
-                // FSM constrains CoT metadata (bpm/dur/key/lang/tsig).
-                // Only masks before </think>, lyrics after are unconstrained.
-                // Force user-provided values into the KV cache so the LM
-                // generates lyrics and codes conditioned on the right metadata.
-                if (ace.bpm > 0) {
-                    ctx->fsm.force_field(ctx->bpe, MetadataFSM::BPM_VALUE, std::to_string(ace.bpm));
-                }
-                if (ace.duration > 0) {
-                    ctx->fsm.force_field(ctx->bpe, MetadataFSM::DURATION_VALUE, std::to_string((int) ace.duration));
-                }
-                if (!ace.keyscale.empty()) {
-                    ctx->fsm.force_field(ctx->bpe, MetadataFSM::KEYSCALE_VALUE, ace.keyscale);
-                }
-                if (!ace.vocal_language.empty() && ace.vocal_language != "unknown") {
-                    ctx->fsm.force_field(ctx->bpe, MetadataFSM::LANGUAGE_VALUE, ace.vocal_language);
-                }
-                if (!ace.timesignature.empty()) {
-                    ctx->fsm.force_field(ctx->bpe, MetadataFSM::TIMESIG_VALUE, ace.timesignature);
-                }
-                active_fsm = &ctx->fsm;
-            } else {
-                if (!req->use_cot_caption) {
-                    active_fsm = &ctx->fsm;
-                }
+            // FSM constrains CoT metadata (bpm/dur/key/lang/tsig).
+            // CAPTION_VALUE is free-form (only blocks audio codes).
+            // Lyrics after </think> are unconstrained.
+            // Force user-provided values into the KV cache so the LM
+            // generates lyrics and codes conditioned on the right metadata.
+            if (ace.bpm > 0) {
+                ctx->fsm.force_field(ctx->bpe, MetadataFSM::BPM_VALUE, std::to_string(ace.bpm));
             }
+            if (ace.duration > 0) {
+                ctx->fsm.force_field(ctx->bpe, MetadataFSM::DURATION_VALUE, std::to_string((int) ace.duration));
+            }
+            if (!ace.keyscale.empty()) {
+                ctx->fsm.force_field(ctx->bpe, MetadataFSM::KEYSCALE_VALUE, ace.keyscale);
+            }
+            if (!ace.vocal_language.empty() && ace.vocal_language != "unknown") {
+                ctx->fsm.force_field(ctx->bpe, MetadataFSM::LANGUAGE_VALUE, ace.vocal_language);
+            }
+            if (!ace.timesignature.empty()) {
+                ctx->fsm.force_field(ctx->bpe, MetadataFSM::TIMESIG_VALUE, ace.timesignature);
+            }
+            active_fsm = &ctx->fsm;
         }
 
         const char * mode_name = skip_codes ? (mode == LM_MODE_INSPIRE ? "Inspire" : "Format") : "Fill";

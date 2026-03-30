@@ -7,6 +7,7 @@
 //
 
 #include "request.h"
+#include "task-types.h"
 
 struct AceLm;
 
@@ -27,6 +28,7 @@ AceLm * ace_lm_load(const AceLmParams * params);
 
 // Enrich request with metadata, lyrics, audio codes.
 // out[lm_batch_size] allocated by caller, filled with enriched copies of req.
+// mode: LM_MODE_GENERATE (full), LM_MODE_INSPIRE (no codes), LM_MODE_FORMAT (no codes).
 // dump_logits/dump_tokens: debug output paths (NULL to disable).
 // cancel/cancel_data: abort callback, polled between tokens. NULL = never cancel.
 // Returns 0 on success, -1 on error or cancellation.
@@ -37,7 +39,8 @@ int ace_lm_generate(AceLm *            ctx,
                     const char *       dump_logits,
                     const char *       dump_tokens,
                     bool (*cancel)(void *) = nullptr,
-                    void * cancel_data     = nullptr);
+                    void * cancel_data     = nullptr,
+                    int    mode            = LM_MODE_GENERATE);
 
 void ace_lm_free(AceLm * ctx);
 

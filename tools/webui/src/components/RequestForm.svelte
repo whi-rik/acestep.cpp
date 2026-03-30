@@ -3,6 +3,8 @@
 	import { app, toast, setRequest } from '../lib/state.svelte.js';
 	import {
 		lmGenerate,
+		lmInspire,
+		lmFormat,
 		synthGenerate,
 		synthGenerateWithAudio,
 		understandAudio
@@ -22,7 +24,6 @@
 	let fileInput: HTMLInputElement;
 
 	let d = $derived(app.props?.default);
-	let maxBatch = $derived(Number(app.props?.cli?.max_batch) || 1);
 	let ditModels = $derived(app.props?.models.dit ?? []);
 	let lmModels = $derived(app.props?.models.lm ?? []);
 	let loraList = $derived(app.props?.loras ?? []);
@@ -224,19 +225,17 @@
 		loadPending(next);
 	}
 
-	// Compose: send form to LM, store all enriched results for batch synth.
-	// The LM preserves user-provided fields and fills the rest independently
-	// per batch item. Each result is a complete standalone request.
-	async function compose() {
+	// shared: call an LM endpoint and load results into the form.
+	// preserves synth params (steps, CFG, shift, seed, batch, cover strength).
+	async function lmCall(fn: (req: AceRequest) => Promise<AceRequest[]>) {
 		busy = true;
 		try {
 			const req = buildRequest();
 			req.audio_codes = '';
-			const results = await lmGenerate(req);
+			const results = await fn(req);
 			if (results.length > 0) {
 				app.pendingRequests = results;
 				app.pendingIndex = 0;
-				// load LM result but preserve synth params from the form
 				setRequest({
 					...results[0],
 					inference_steps: app.request.inference_steps,
@@ -252,6 +251,23 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	// Inspire: short caption -> fresh metadata + lyrics (no audio codes)
+	async function inspire() {
+		await lmCall(lmInspire);
+	}
+
+	// Format: caption + lyrics -> metadata + lyrics (no audio codes)
+	async function format() {
+		await lmCall(lmFormat);
+	}
+
+	// Compose: send form to LM, store all enriched results for batch synth.
+	// The LM preserves user-provided fields and fills the rest independently
+	// per batch item. Each result is a complete standalone request.
+	async function compose() {
+		await lmCall(lmGenerate);
 	}
 
 	// POST /synth: send pending requests (or current form) to the server.
@@ -464,6 +480,11 @@
 		</div>
 	</details>
 
+	<div class="lm-row">
+		<button type="button" disabled={busy} onclick={inspire}>Inspire</button>
+		<button type="button" disabled={busy} onclick={format}>Format</button>
+	</div>
+
 	<details>
 		<summary>Advanced LM</summary>
 		<div class="details-body">
@@ -522,30 +543,18 @@
 				type="number"
 				class="batch-input"
 				min="1"
-				max={maxBatch}
+				max={app.props?.cli?.max_batch || 9}
 				bind:value={app.request.lm_batch_size}
-				placeholder="1"
 			/></label
 		>
 		<span class="selector-label">Pending</span>
 		<div class="pending-nav">
-			<button
-				type="button"
-				class="nav-btn"
-				disabled={app.pendingRequests.length < 2 || app.pendingIndex === 0}
-				onclick={() => switchPending(-1)}>&lt;</button
-			>
+			<button type="button" class="nav-btn" onclick={() => switchPending(-1)}>&lt;</button>
 			<span class="nav-label"
-				>{app.pendingRequests.length > 0 ? app.pendingIndex + 1 : 1} / {app.pendingRequests
-					.length || 1}</span
+				>{app.pendingRequests.length > 0 ? app.pendingIndex + 1 : 0} / {app.pendingRequests
+					.length}</span
 			>
-			<button
-				type="button"
-				class="nav-btn"
-				disabled={app.pendingRequests.length < 2 ||
-					app.pendingIndex === app.pendingRequests.length - 1}
-				onclick={() => switchPending(1)}>&gt;</button
-			>
+			<button type="button" class="nav-btn" onclick={() => switchPending(1)}>&gt;</button>
 		</div>
 	</div>
 
@@ -624,7 +633,6 @@
 				min="1"
 				max="9"
 				bind:value={app.request.synth_batch_size}
-				placeholder="1"
 			/></label
 		>
 		<span class="selector-label">Format</span>
@@ -774,5 +782,12 @@
 	}
 	button:disabled {
 		opacity: 0.4;
+	}
+	.lm-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.lm-row button {
+		flex: 1;
 	}
 </style>

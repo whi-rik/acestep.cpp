@@ -470,13 +470,31 @@ static bool ensure_synth(const std::string & dit_name, const std::string & lora_
     return true;
 }
 
-// POST /lm
+// POST /lm[?mode=inspire|format]
 // accepts: AceRequest JSON (+ optional "lm_model" for LM selection)
 // returns: JSON array of enriched AceRequests (lm_batch_size controls count)
+// modes:
+//   (none)    full: metadata + lyrics + audio codes
+//   inspire   short caption -> metadata + lyrics (no codes)
+//   format    caption + lyrics -> metadata + lyrics (no codes)
 static void handle_lm(const httplib::Request & req, httplib::Response & res) {
     if (g_registry.lm.empty()) {
         json_error(res, 501, "No LM models in registry");
         return;
+    }
+
+    // parse mode from URL parameter
+    int mode = LM_MODE_GENERATE;
+    if (req.has_param("mode")) {
+        std::string m = req.get_param_value("mode");
+        if (m == "inspire") {
+            mode = LM_MODE_INSPIRE;
+        } else if (m == "format") {
+            mode = LM_MODE_FORMAT;
+        } else {
+            json_error(res, 400, "Invalid mode (use: inspire, format)");
+            return;
+        }
     }
 
     // parse server fields + request
@@ -518,7 +536,7 @@ static void handle_lm(const httplib::Request & req, httplib::Response & res) {
 
     std::vector<AceRequest> out(lm_batch_size);
     int rc = ace_lm_generate(g_ctx_lm, &ace_req, lm_batch_size, out.data(), NULL, NULL, server_cancel,
-                             (void *) &req.is_connection_closed);
+                             (void *) &req.is_connection_closed, mode);
     lock.unlock();
 
     if (rc != 0) {

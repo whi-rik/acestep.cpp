@@ -17,9 +17,22 @@ inline constexpr const char * TASK_COMPLETE   = "complete";
 // LM system instruction (Composer Agent: text -> metadata + audio codes)
 inline constexpr const char * LM_INSTRUCTION = "Generate audio semantic tokens based on the given conditions:";
 
+// LM inspire instruction (short query -> metadata + lyrics, no codes)
+inline constexpr const char * LM_INSPIRE_INSTRUCTION =
+    "Expand the user's input into a more detailed and specific musical description:";
+
+// LM format instruction (caption + lyrics -> metadata + lyrics, no codes)
+inline constexpr const char * LM_FORMAT_INSTRUCTION =
+    "Format the user's input into a more detailed and specific musical description:";
+
 // Understand system instruction (Listener: audio codes -> metadata + lyrics)
 inline constexpr const char * LM_UNDERSTAND_INSTRUCTION =
     "Understand the given musical conditions and describe the audio semantics accordingly:";
+
+// LM generation modes
+#define LM_MODE_GENERATE 0  // full: metadata + lyrics + audio codes
+#define LM_MODE_INSPIRE  1  // inspire: metadata + lyrics only (no codes)
+#define LM_MODE_FORMAT   2  // format: metadata + lyrics only (no codes)
 
 // DiT instructions (injected into text encoder cross-attention).
 // Fixed instructions for tasks without track name.

@@ -16,6 +16,36 @@ export async function lmGenerate(req: AceRequest): Promise<AceRequest[]> {
 	return res.json();
 }
 
+// POST lm?mode=inspire: short caption -> metadata + lyrics (no codes)
+export async function lmInspire(req: AceRequest): Promise<AceRequest[]> {
+	const res = await fetch('lm?mode=inspire', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(req)
+	});
+	if (res.status === 503) throw new Error('Server busy');
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(err.error || res.statusText);
+	}
+	return res.json();
+}
+
+// POST lm?mode=format: caption + lyrics -> metadata + lyrics (no codes)
+export async function lmFormat(req: AceRequest): Promise<AceRequest[]> {
+	const res = await fetch('lm?mode=format', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(req)
+	});
+	if (res.status === 503) throw new Error('Server busy');
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(err.error || res.statusText);
+	}
+	return res.json();
+}
+
 // POST synth[?wav=1]: request(s) -> audio blob(s)
 // Metadata (seed, duration, etc) is already in the request JSON from /lm.
 export async function synthGenerate(reqs: AceRequest[], format: string): Promise<Blob[]> {

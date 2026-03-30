@@ -614,7 +614,8 @@ int ace_lm_generate(AceLm *            ctx,
                     const char *       dump_logits,
                     const char *       dump_tokens,
                     bool (*cancel)(void *),
-                    void * cancel_data) {
+                    void * cancel_data,
+                    int    mode) {
     if (!ctx || !req || !out || lm_batch_size < 1) {
         return -1;
     }
@@ -660,30 +661,40 @@ int ace_lm_generate(AceLm *            ctx,
     bool need_lyrics    = ace.lyrics.empty();
     bool has_all_metas  = (ace.bpm > 0 && ace.duration > 0 && !ace.keyscale.empty() && !ace.timesignature.empty());
     bool need_fill      = need_lyrics || !has_all_metas;
+    bool skip_codes     = (mode == LM_MODE_INSPIRE || mode == LM_MODE_FORMAT);
 
     std::vector<int>       prompt;
     std::vector<AcePrompt> aces;
 
     // ONE path: fill what's missing, then generate codes.
     // JSON is the instruction. Empty field = "fill it". Filled = "don't touch".
-    if (user_has_codes) {
+    if (user_has_codes && !skip_codes) {
         fprintf(stderr, "[Pass] audio_codes present, skip LM\n");
-    } else if (need_fill) {
-        if (need_lyrics) {
-            const char * sys =
-                "# Instruction\n"
-                "Expand the user's input into a more detailed"
-                " and specific musical description:\n";
+    } else if (skip_codes || need_fill) {
+        // inspire/format modes always run Phase 1 with their own instruction.
+        // generate mode uses the inspire instruction when lyrics are empty.
+        if (mode == LM_MODE_INSPIRE || (mode == LM_MODE_GENERATE && need_lyrics)) {
+            std::string sys      = std::string("# Instruction\n") + LM_INSPIRE_INSTRUCTION + "\n";
             std::string user_msg = ace.caption;
-            prompt               = build_custom_prompt(ctx->bpe, sys, user_msg.c_str());
+            if (ace.lyrics == "[Instrumental]") {
+                user_msg += "\n\ninstrumental: true";
+            }
+            prompt = build_custom_prompt(ctx->bpe, sys.c_str(), user_msg.c_str());
+        } else if (mode == LM_MODE_FORMAT) {
+            std::string sys      = std::string("# Instruction\n") + LM_FORMAT_INSTRUCTION + "\n";
+            std::string user_msg = "# Caption\n" + ace.caption + "\n\n# Lyric\n" + ace.lyrics;
+            prompt               = build_custom_prompt(ctx->bpe, sys.c_str(), user_msg.c_str());
         } else {
             prompt = build_lm_prompt(ctx->bpe, ace);
         }
         std::vector<int> uncond;
 
+        // inspire/format always generate lyrics. generate mode: only when lyrics are empty.
+        bool gen_lyrics = need_lyrics || skip_codes;
+
         // Disable CFG for ANY textual expansion (lyrics OR CoT reasoning),
         // as CFG distorts text logits and forces premature newlines.
-        float fill_cfg   = (need_lyrics || req->use_cot_caption) ? 1.0f : cfg_scale;
+        float fill_cfg   = (gen_lyrics || req->use_cot_caption) ? 1.0f : cfg_scale;
         float fill_top_p = top_p;
         int   fill_top_k = top_k;
 
@@ -695,7 +706,7 @@ int ace_lm_generate(AceLm *            ctx,
         MetadataFSM * active_fsm = nullptr;
 
         if (ctx->params.use_fsm) {
-            if (need_lyrics) {
+            if (gen_lyrics) {
                 // FSM constrains CoT metadata (bpm/dur/key/lang/tsig).
                 // Only masks before </think>, lyrics after are unconstrained.
                 if (ace.vocal_language != "unknown" && !ace.vocal_language.empty()) {
@@ -709,17 +720,22 @@ int ace_lm_generate(AceLm *            ctx,
             }
         }
 
-        fprintf(stderr, "[Fill] lyrics=%s metas=%s | %zu tokens, CFG: %.2f, N=%d\n", need_lyrics ? "generate" : "keep",
-                has_all_metas ? "complete" : "fill gaps", prompt.size(), fill_cfg, lm_batch_size);
+        const char * mode_name = skip_codes ? (mode == LM_MODE_INSPIRE ? "Inspire" : "Format") : "Fill";
+        fprintf(stderr, "[%s] lyrics=%s metas=%s | %zu tokens, CFG: %.2f, N=%d\n", mode_name,
+                gen_lyrics ? "generate" : "keep", has_all_metas ? "complete" : "fill gaps", prompt.size(), fill_cfg,
+                lm_batch_size);
 
-        auto phase1_texts = generate_phase1_batch(
-            &ctx->model, &ctx->bpe, prompt, 2048, temperature, fill_top_p, fill_top_k, seed, lm_batch_size, active_fsm,
-            need_lyrics, fill_cfg, uncond.empty() ? nullptr : &uncond, !need_lyrics, cancel, cancel_data);
+        auto phase1_texts = generate_phase1_batch(&ctx->model, &ctx->bpe, prompt, 2048, temperature, fill_top_p,
+                                                  fill_top_k, seed, lm_batch_size, active_fsm, gen_lyrics, fill_cfg,
+                                                  uncond.empty() ? nullptr : &uncond, !gen_lyrics, cancel, cancel_data);
         if (phase1_texts.empty()) {
             return -1;
         }
 
-        parse_phase1_into_aces(phase1_texts, ace, aces, seed, "Fill", need_lyrics, req->use_cot_caption);
+        // inspire mode: empty base so the LM output overwrites everything.
+        // format/generate: gap fill, user metadata preserved.
+        AcePrompt parse_base = (mode == LM_MODE_INSPIRE) ? AcePrompt{} : ace;
+        parse_phase1_into_aces(phase1_texts, parse_base, aces, seed, mode_name, gen_lyrics, req->use_cot_caption);
 
         int n_kv_reset = (fill_cfg > 1.0f) ? 2 * lm_batch_size : lm_batch_size;
         for (int i = 0; i < n_kv_reset; i++) {
@@ -761,9 +777,11 @@ int ace_lm_generate(AceLm *            ctx,
         }
     }
 
-    // Phase 2: generate audio codes
+    // Phase 2: generate audio codes (skip for inspire/format modes)
     std::vector<std::string> batch_codes(lm_batch_size);
-    if (!user_has_codes) {
+    if (skip_codes) {
+        fprintf(stderr, "[Skip] %s mode, no audio code generation\n", mode == LM_MODE_INSPIRE ? "Inspire" : "Format");
+    } else if (!user_has_codes) {
         batch_codes = run_phase2_batch(&ctx->model, ctx->bpe, aces, temperature, top_p, top_k, seed, lm_batch_size,
                                        cfg_scale, neg_prompt, ctx->params.use_batch_cfg, cancel, cancel_data);
         if (batch_codes.empty()) {

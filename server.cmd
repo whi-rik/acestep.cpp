@@ -10,6 +10,7 @@ ace-server.exe ^
     --host 0.0.0.0 ^
     --port 8085 ^
     --models .\models ^
+    --loras .\loras ^
     --max-batch 1
 
 pause

@@ -480,28 +480,22 @@
 		</div>
 	</details>
 
-	<label class="section-label"
-		>Name
-		<input type="text" bind:value={app.name} placeholder="Untitled" />
-	</label>
+	<div class="section-title">Name</div>
+	<input type="text" bind:value={app.name} placeholder="Untitled" />
 
-	<label class="section-label"
-		>Caption
-		<textarea
-			rows="8"
-			placeholder="Upbeat pop rock with driving guitars... (the only required field, may be enriched by the LM)"
-			bind:value={app.request.caption}
-		></textarea>
-	</label>
+	<div class="section-title">Caption</div>
+	<textarea
+		rows="8"
+		placeholder="Upbeat pop rock with driving guitars... (the only required field, may be enriched by the LM)"
+		bind:value={app.request.caption}
+	></textarea>
 
-	<label class="section-label"
-		>Lyrics
-		<textarea
-			rows="8"
-			placeholder="Write your own lyrics, type [Instrumental], or leave empty to let the LM create them..."
-			bind:value={app.request.lyrics}
-		></textarea>
-	</label>
+	<div class="section-title">Lyrics</div>
+	<textarea
+		rows="8"
+		placeholder="Write your own lyrics, type [Instrumental], or leave empty to let the LM create them..."
+		bind:value={app.request.lyrics}
+	></textarea>
 
 	<div class="meta-grid">
 		<label
@@ -761,9 +755,11 @@
 		font-size: 0.85rem;
 		color: var(--fg-dim);
 	}
-	.section-label {
+	.section-title {
+		font-size: 0.85rem;
 		color: var(--fg);
 		font-weight: 600;
+		padding: 0.4rem 0 0;
 	}
 	textarea,
 	input[type='text'],

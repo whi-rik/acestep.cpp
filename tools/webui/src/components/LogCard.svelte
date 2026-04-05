@@ -81,7 +81,7 @@
 		line-height: 1.4;
 		color: var(--fg-dim);
 		background: var(--bg-card);
-		white-space: pre-wrap;
-		word-break: break-all;
+		white-space: pre;
+		overflow-x: auto;
 	}
 </style>

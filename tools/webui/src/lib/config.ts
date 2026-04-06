@@ -8,6 +8,7 @@ export const WAVEFORM_HEIGHT = 64;
 // task types (mirrors task-types.h)
 export const TASK_TEXT2MUSIC = 'text2music';
 export const TASK_COVER = 'cover';
+export const TASK_COVER_NOFSQ = 'cover-nofsq';
 export const TASK_REPAINT = 'repaint';
 export const TASK_LEGO = 'lego';
 export const TASK_EXTRACT = 'extract';

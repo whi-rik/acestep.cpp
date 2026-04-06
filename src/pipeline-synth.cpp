@@ -266,8 +266,8 @@ int ace_synth_generate(AceSynth *         ctx,
     s.re                 = s.rr.repainting_end;
     // use_source_context must be set before ops_resolve_T which uses it for T.
     // Mode routing refines it per task; this first pass covers all source-context tasks.
-    s.use_source_context = (s.task == TASK_COVER || s.task == TASK_REPAINT || s.task == TASK_LEGO ||
-                            s.task == TASK_EXTRACT || s.task == TASK_COMPLETE);
+    s.use_source_context = (s.task == TASK_COVER || s.task == TASK_COVER_NOFSQ || s.task == TASK_REPAINT ||
+                            s.task == TASK_LEGO || s.task == TASK_EXTRACT || s.task == TASK_COMPLETE);
     // non-cover encoding pass (for audio_cover_strength < 1.0 switching) always uses text2music.
     s.nc_instruction_str = DIT_INSTR_TEXT2MUSIC;
 
@@ -328,6 +328,14 @@ int ace_synth_generate(AceSynth *         ctx,
             s.use_source_context = true;
             s.instruction_str    = DIT_INSTR_COVER;
             ops_fsq_roundtrip(ctx, s);  // lossy FSQ: creative freedom + rhythmic sync
+        } else if (s.task == TASK_COVER_NOFSQ) {
+            // expert research mode: skip FSQ roundtrip, feed clean VAE latents.
+            // off-distribution (DiT trained on FSQ latents for cover instruction).
+            // without FSQ the source is too clean and the DiT reproduces verbatim.
+            // use SFT model, pass ref_audio = src_audio for timbre conditioning,
+            // and lower audio_cover_strength (0.02 to 0.2) to let the DiT hallucinate.
+            s.use_source_context = true;
+            s.instruction_str    = DIT_INSTR_COVER;
         } else if (s.task == TASK_REPAINT) {
             s.use_source_context = true;
             s.instruction_str    = DIT_INSTR_REPAINT;

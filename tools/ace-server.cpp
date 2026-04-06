@@ -1142,8 +1142,8 @@ int main(int argc, char ** argv) {
 #endif
     });
 
-    // reject oversized bodies (120 MB: ~10min WAV stereo 48kHz 16-bit)
-    svr.set_payload_max_length(120 * 1024 * 1024);
+    // reject oversized bodies (256 MB: src + ref audio, up to 10min WAV each)
+    svr.set_payload_max_length(256 * 1024 * 1024);
 
     // all endpoints are always registered. handlers return 501 when the
     // backing pipeline has no models in the registry.

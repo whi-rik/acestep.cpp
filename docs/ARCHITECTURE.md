@@ -255,11 +255,25 @@ Run `ace-synth` to decode existing codes. See `examples/dit-only.json`.
 
 **Cover** (`"task_type": "cover"` + `--src-audio`): no LLM needed. The source audio
 (WAV or MP3, any sample rate) is resampled to 48kHz, VAE-encoded to latent
-space and used as DiT context instead of silence.
+space, then passed through an FSQ roundtrip (tokenize 25Hz to 5Hz, detokenize
+back to 25Hz) that deliberately degrades the latents. This lossy bottleneck
+gives the DiT creative freedom to reinterpret the source rather than copy it.
 `audio_cover_strength` in the JSON controls how many DiT steps see the source
 (0.5 = half the steps use source context, half use silence). The caption
 steers the style while the source provides structure, melody, and rhythm.
 Duration is determined by the source audio.
+
+**Cover-nofsq** (`"task_type": "cover-nofsq"` + `--src-audio`): expert research
+mode. Same as cover but skips the FSQ roundtrip: the DiT receives clean VAE
+latents instead of FSQ-degraded ones. This is off-distribution (the DiT was
+trained with FSQ latents for the cover instruction). Without FSQ the source signal is too clean and the DiT
+tends to reproduce the input verbatim. Use the SFT model, pass `--ref-audio`
+pointing to the same file as `--src-audio` for timbre conditioning, and lower
+`audio_cover_strength` (0.02 to 0.2) to reduce the number of steps that see
+the source context and let the DiT hallucinate. Can produce good results on
+simple compositions or tracks close to the DiT training distribution.
+Heavy cherry-picking across seeds is expected.
+Same JSON fields as cover, just change the task_type.
 
 **Repaint** (`"task_type": "repaint"` + `--src-audio`):
 regenerates a time region of the source audio while preserving the rest.
@@ -327,6 +341,7 @@ Available track names for lego, extract, and complete: `vocals`, `backing_vocals
 |------|-------|----------|---------|
 | text2music | yes | yes | yes |
 | cover | yes | yes | no (skipped) |
+| cover-nofsq | yes | yes | no (skipped) |
 | repaint | yes | yes | no (skipped) |
 | lego | no | yes | yes |
 | extract | no | yes | no (skipped) |
@@ -342,6 +357,7 @@ What the DiT actually receives in its 128-channel context `[src(64) | mask(64)]`
 |------|-------------|------------|-------------|
 | text2music | silence | 1.0 | "Fill the audio semantic mask..." |
 | cover | FSQ(src) roundtrip | 1.0 | "Generate audio semantic tokens..." |
+| cover-nofsq | raw VAE src (no FSQ) | 1.0 | "Generate audio semantic tokens..." |
 | repaint | silence in zone / src outside | 0.0 outside / 1.0 in zone | "Repaint the mask area..." |
 | lego (no region) | raw VAE src everywhere | 1.0 | "Generate the TRACK track..." |
 | lego (with region) | raw VAE src everywhere | 0.0 outside / 1.0 in zone | "Generate the TRACK track..." |
@@ -350,6 +366,10 @@ What the DiT actually receives in its 128-channel context `[src(64) | mask(64)]`
 
 cover uses an FSQ roundtrip (tokenize 25Hz->5Hz then detokenize 5Hz->25Hz) to give
 the DiT creative freedom while retaining rhythmic/melodic structure from the source.
+cover-nofsq skips this roundtrip: same instruction, clean latents. Expert
+research mode. Use SFT model, pass
+ref_audio = src_audio, and lower audio_cover_strength (0.02 to 0.2) to let the
+DiT hallucinate instead of reproducing the source verbatim.
 All other tasks with source audio use raw VAE latents (no FSQ).
 
 ### Region-mode pipeline (repaint + lego with region)

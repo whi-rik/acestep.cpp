@@ -13,6 +13,7 @@
 	import { putSong } from '../lib/db.js';
 	import {
 		TASK_COVER,
+		TASK_COVER_NOFSQ,
 		TASK_REPAINT,
 		TASK_LEGO,
 		TASK_EXTRACT,
@@ -623,6 +624,7 @@
 				>
 					<option value="">text2music</option>
 					<option value={TASK_COVER}>cover</option>
+					<option value={TASK_COVER_NOFSQ}>cover-nofsq</option>
 					<option value={TASK_REPAINT}>repaint</option>
 					<option value={TASK_LEGO}>lego</option>
 					<option value={TASK_EXTRACT}>extract</option>

@@ -7,12 +7,13 @@
 #include <string>
 
 // task type identifiers
-inline constexpr const char * TASK_TEXT2MUSIC = "text2music";
-inline constexpr const char * TASK_COVER      = "cover";
-inline constexpr const char * TASK_REPAINT    = "repaint";
-inline constexpr const char * TASK_LEGO       = "lego";
-inline constexpr const char * TASK_EXTRACT    = "extract";
-inline constexpr const char * TASK_COMPLETE   = "complete";
+inline constexpr const char * TASK_TEXT2MUSIC  = "text2music";
+inline constexpr const char * TASK_COVER       = "cover";
+inline constexpr const char * TASK_COVER_NOFSQ = "cover-nofsq";
+inline constexpr const char * TASK_REPAINT     = "repaint";
+inline constexpr const char * TASK_LEGO        = "lego";
+inline constexpr const char * TASK_EXTRACT     = "extract";
+inline constexpr const char * TASK_COMPLETE    = "complete";
 
 // LM system instruction (Composer Agent: text -> metadata + audio codes)
 inline constexpr const char * LM_INSTRUCTION = "Generate audio semantic tokens based on the given conditions:";

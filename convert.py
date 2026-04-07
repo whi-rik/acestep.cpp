@@ -145,8 +145,11 @@ def add_tensors_from_sf(w, sf_path, tag, model_type):
                 arr = np.frombuffer(raw, dtype=np.float16).reshape(shape)
                 w.add_tensor(name, arr)
             elif dtype_str == "F32":
-                arr = np.frombuffer(raw, dtype=np.float32).reshape(shape)
-                w.add_tensor(name, arr)
+                # convert F32 to BF16: truncate lower 16 mantissa bits
+                arr = np.frombuffer(raw, dtype=np.uint32).reshape(shape)
+                arr = (arr >> 16).astype(np.uint16)
+                w.add_tensor(name, arr, raw_dtype=BF16)
+                nbytes = nbytes // 2  # actual stored size
             else:
                 log(tag, "  skip %s: dtype %s" % (name, dtype_str))
                 continue

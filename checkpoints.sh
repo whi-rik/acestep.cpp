@@ -2,7 +2,7 @@
 # Download ACE-Step checkpoints from HuggingFace
 # Usage: ./checkpoints.sh [--all]
 #   default: Qwen3-Embedding-0.6B + acestep-5Hz-lm-4B + acestep-v15-turbo + vae
-#   --all:   + all LM variants + all DiT variants from ACE-Step registry
+#   --all:   + all LM variants + all DiT variants (incl. XL 4B) from ACE-Step registry
 
 set -eu
 
@@ -52,6 +52,10 @@ if [ "${1:-}" = "--all" ]; then
     dl_repo "acestep-v15-turbo-continuous" "ACE-Step/acestep-v15-turbo-continuous"
     dl_repo "acestep-v15-sft" "ACE-Step/acestep-v15-sft"
     dl_repo "acestep-v15-base" "ACE-Step/acestep-v15-base"
+    # XL (4B DiT) variants
+    dl_repo "acestep-v15-xl-turbo" "ACE-Step/acestep-v15-xl-turbo"
+    dl_repo "acestep-v15-xl-sft" "ACE-Step/acestep-v15-xl-sft"
+    dl_repo "acestep-v15-xl-base" "ACE-Step/acestep-v15-xl-base"
 fi
 
 find "$DIR" -name '.cache' -type d -exec rm -rf {} + 2>/dev/null

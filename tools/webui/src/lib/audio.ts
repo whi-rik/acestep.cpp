@@ -37,6 +37,11 @@ export function unregisterPlaying(id: number) {
 	tracks.delete(id);
 }
 
+// number of tracks currently playing (for volume division)
+export function playingCount(): number {
+	return tracks.size || 1;
+}
+
 // find the position of any playing track with the same duration.
 // returns its current time, or -1 if no match.
 export function findSyncPosition(duration: number, excludeId: number): number {

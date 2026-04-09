@@ -7,7 +7,8 @@
 		getContext,
 		registerPlaying,
 		unregisterPlaying,
-		findSyncPosition
+		findSyncPosition,
+		playingCount
 	} from '../lib/audio.js';
 
 	let {
@@ -233,7 +234,7 @@
 	// loop logic lives here: when playhead passes rangeEnd, restart at rangeStart
 	function tick() {
 		if (!source) return;
-		if (gain) gain.gain.value = app.volume;
+		if (gain) gain.gain.value = app.volume / Math.sqrt(playingCount());
 		const t = currentTime();
 		if (t >= dur) {
 			stopPlayback();

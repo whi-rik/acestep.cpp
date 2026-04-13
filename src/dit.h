@@ -410,7 +410,11 @@ static bool dit_ggml_load(DiTGGML *    m,
     // Merge LoRA deltas into projection weights (before GPU upload and QKV fusion)
     if (lora_path) {
         Timer lora_timer;
-        lora_merge(&m->wctx, gf, lora_path, lora_scale, m->backend);
+        if (!lora_merge(&m->wctx, gf, lora_path, lora_scale, m->backend)) {
+            fprintf(stderr, "[LoRA] FATAL: no tensors merged (model mismatch)\n");
+            gf_close(&gf);
+            return false;
+        }
         fprintf(stderr, "[LoRA] Merge time: %.1f ms\n", lora_timer.ms());
     }
 

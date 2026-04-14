@@ -360,18 +360,7 @@ int ace_synth_generate(AceSynth *         ctx,
             s.use_source_context      = true;
             s.rr.audio_cover_strength = 1.0f;  // all DiT steps hear the backing track
             s.instruction_str         = dit_instr_lego(track_upper);
-            if (!s.rr.track.empty()) {
-                bool valid = false;
-                for (int k = 0; k < TRACK_NAMES_COUNT; k++) {
-                    if (s.rr.track == TRACK_NAMES[k]) {
-                        valid = true;
-                        break;
-                    }
-                }
-                if (!valid) {
-                    fprintf(stderr, "[Lego] WARNING: '%s' is not a standard track name\n", s.rr.track.c_str());
-                }
-            }
+            validate_track_names(s.rr.track, "Lego");
             fprintf(stderr, "[Synth] task=%s\n", s.task.c_str());
             if (ctx->is_turbo) {
                 fprintf(stderr, "[Synth] WARNING: lego requires base model, turbo output incoherent\n");
@@ -380,18 +369,7 @@ int ace_synth_generate(AceSynth *         ctx,
             s.use_source_context      = true;
             s.rr.audio_cover_strength = 1.0f;  // DiT sees the full mix
             s.instruction_str         = dit_instr_extract(track_upper);
-            if (!s.rr.track.empty()) {
-                bool valid = false;
-                for (int k = 0; k < TRACK_NAMES_COUNT; k++) {
-                    if (s.rr.track == TRACK_NAMES[k]) {
-                        valid = true;
-                        break;
-                    }
-                }
-                if (!valid) {
-                    fprintf(stderr, "[Extract] WARNING: '%s' is not a standard track name\n", s.rr.track.c_str());
-                }
-            }
+            validate_track_names(s.rr.track, "Extract");
             fprintf(stderr, "[Synth] task=%s\n", s.task.c_str());
             if (ctx->is_turbo) {
                 fprintf(stderr, "[Synth] WARNING: extract requires base model, turbo output incoherent\n");
@@ -400,18 +378,7 @@ int ace_synth_generate(AceSynth *         ctx,
             s.use_source_context      = true;
             s.rr.audio_cover_strength = 1.0f;  // DiT sees the full isolated stem
             s.instruction_str         = dit_instr_complete(track_upper);
-            if (!s.rr.track.empty()) {
-                bool valid = false;
-                for (int k = 0; k < TRACK_NAMES_COUNT; k++) {
-                    if (s.rr.track == TRACK_NAMES[k]) {
-                        valid = true;
-                        break;
-                    }
-                }
-                if (!valid) {
-                    fprintf(stderr, "[Complete] WARNING: '%s' is not a standard track name\n", s.rr.track.c_str());
-                }
-            }
+            validate_track_names(s.rr.track, "Complete");
             fprintf(stderr, "[Synth] task=%s\n", s.task.c_str());
             if (ctx->is_turbo) {
                 fprintf(stderr, "[Synth] WARNING: complete requires base model, turbo output incoherent\n");

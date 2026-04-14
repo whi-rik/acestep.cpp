@@ -69,3 +69,29 @@ inline constexpr const char * TRACK_NAMES[] = {
     "percussion", "strings",        "synth", "fx",   "brass",  "woodwinds",
 };
 inline constexpr int TRACK_NAMES_COUNT = 12;
+
+// validate track names in a " | " separated string (complete supports multi-track).
+// warns per invalid name; does nothing when track is empty.
+static inline void validate_track_names(const std::string & track, const char * label) {
+    if (track.empty()) {
+        return;
+    }
+    size_t pos = 0;
+    while (pos < track.size()) {
+        size_t      sep  = track.find(" | ", pos);
+        size_t      len  = (sep == std::string::npos) ? std::string::npos : sep - pos;
+        std::string name = track.substr(pos, len);
+        pos              = (sep == std::string::npos) ? track.size() : sep + 3;
+
+        bool valid = false;
+        for (int k = 0; k < TRACK_NAMES_COUNT; k++) {
+            if (name == TRACK_NAMES[k]) {
+                valid = true;
+                break;
+            }
+        }
+        if (!valid) {
+            fprintf(stderr, "[%s] WARNING: '%s' is not a standard track name\n", label, name.c_str());
+        }
+    }
+}

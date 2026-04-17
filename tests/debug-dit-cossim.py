@@ -175,7 +175,11 @@ def run_python(dump_dir, req, cfg, adapter_dir=None):
     )
 
     if adapter_dir:
-        lr = handler.add_lora(adapter_dir)
+        # torch.nn forbids '.' in module names, PEFT derives the adapter name
+        # from the directory basename. Sanitize so directory names like
+        # 'ACE-Step-v1.5-chinese-new-year-LoRA' do not abort Python ref load.
+        adapter_name = os.path.basename(os.path.normpath(adapter_dir)).replace(".", "_") or "default"
+        lr = handler.add_lora(adapter_dir, adapter_name=adapter_name)
         print(f"[Python] LoRA: {lr}")
 
     model = handler.model

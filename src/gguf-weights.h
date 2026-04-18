@@ -219,10 +219,11 @@ static struct ggml_tensor * gf_load_tensor_f32(WeightCtx * wctx, const GGUFModel
     struct ggml_tensor * tensor = ggml_new_tensor(wctx->ctx, GGML_TYPE_F32, n_dims, ne);
     ggml_set_name(tensor, name.c_str());
 
-    // Convert data into staging buffer
-    size_t n = ggml_nelements(src);
-    wctx->staging.emplace_back(n);
-    std::vector<float> & buf = wctx->staging.back();
+    // Convert data into staging buffer. unique_ptr keeps .get() stable even
+    // when wctx->staging grows on subsequent calls.
+    size_t  n    = ggml_nelements(src);
+    auto    buf  = std::make_unique<float[]>(n);
+    float * data = buf.get();
 
     size_t       offset = gguf_get_tensor_offset(gf.gguf, idx);
     const void * raw    = gf.mapping + gf.data_offset + offset;
@@ -230,13 +231,14 @@ static struct ggml_tensor * gf_load_tensor_f32(WeightCtx * wctx, const GGUFModel
     if (src->type == GGML_TYPE_BF16) {
         const uint16_t * p = (const uint16_t *) raw;
         for (size_t i = 0; i < n; i++) {
-            buf[i] = ggml_bf16_to_fp32(*(const ggml_bf16_t *) &p[i]);
+            data[i] = ggml_bf16_to_fp32(*(const ggml_bf16_t *) &p[i]);
         }
     } else {
-        ggml_fp16_to_fp32_row((const ggml_fp16_t *) raw, buf.data(), (int) n);
+        ggml_fp16_to_fp32_row((const ggml_fp16_t *) raw, data, (int) n);
     }
 
-    wctx->pending.push_back({ tensor, buf.data(), n * sizeof(float), 0 });
+    wctx->pending.push_back({ tensor, data, n * sizeof(float), 0 });
+    wctx->staging.push_back(std::move(buf));
     return tensor;
 }
 

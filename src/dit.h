@@ -161,17 +161,17 @@ static struct ggml_tensor * dit_load_proj_in_w(WeightCtx *         wctx,
     struct ggml_tensor * dst = ggml_new_tensor_2d(wctx->ctx, GGML_TYPE_F32, in_ch * P, H);
     ggml_set_name(dst, name.c_str());
 
-    size_t n = (size_t) in_ch * P * H;
-    wctx->staging.emplace_back(n);
-    auto & buf = wctx->staging.back();
+    size_t  n    = (size_t) in_ch * P * H;
+    auto    buf  = std::make_unique<float[]>(n);
+    float * data = buf.get();
 
     // src ggml [P, in_ch, H]: elem(p, ic, h) = raw[h*P*in_ch + ic*P + p]
-    // dst ggml [in_ch*P, H]:  elem(j, h)     = buf[h*in_ch*P + j]  where j = p*in_ch + ic
+    // dst ggml [in_ch*P, H]:  elem(j, h)     = data[h*in_ch*P + j]  where j = p*in_ch + ic
     auto cvt = [&](auto read_fn) {
         for (int h = 0; h < H; h++) {
             for (int ic = 0; ic < in_ch; ic++) {
                 for (int p = 0; p < P; p++) {
-                    buf[h * in_ch * P + p * in_ch + ic] = read_fn(h * P * in_ch + ic * P + p);
+                    data[h * in_ch * P + p * in_ch + ic] = read_fn(h * P * in_ch + ic * P + p);
                 }
             }
         }
@@ -189,7 +189,8 @@ static struct ggml_tensor * dit_load_proj_in_w(WeightCtx *         wctx,
         fprintf(stderr, "[GGUF] FATAL: unsupported type %d for '%s' in proj_in pre-permute\n", src->type, name.c_str());
         exit(1);
     }
-    wctx->pending.push_back({ dst, buf.data(), n * sizeof(float), 0 });
+    wctx->pending.push_back({ dst, data, n * sizeof(float), 0 });
+    wctx->staging.push_back(std::move(buf));
     return dst;
 }
 
@@ -217,17 +218,17 @@ static struct ggml_tensor * dit_load_proj_out_w(WeightCtx *         wctx,
     struct ggml_tensor * dst = ggml_new_tensor_2d(wctx->ctx, GGML_TYPE_F32, H, out_ch * P);
     ggml_set_name(dst, name.c_str());
 
-    size_t n = (size_t) out_ch * P * H;
-    wctx->staging.emplace_back(n);
-    auto & buf = wctx->staging.back();
+    size_t  n    = (size_t) out_ch * P * H;
+    auto    buf  = std::make_unique<float[]>(n);
+    float * data = buf.get();
 
     // src ggml [P, out_ch, H]: elem(p, oc, h) = raw[h*P*out_ch + oc*P + p]
-    // dst ggml [H, out_ch*P]:  elem(h, j)     = buf[j*H + h]  where j = p*out_ch + oc
+    // dst ggml [H, out_ch*P]:  elem(h, j)     = data[j*H + h]  where j = p*out_ch + oc
     auto cvt = [&](auto read_fn) {
         for (int h = 0; h < H; h++) {
             for (int oc = 0; oc < out_ch; oc++) {
                 for (int p = 0; p < P; p++) {
-                    buf[(p * out_ch + oc) * H + h] = read_fn(h * P * out_ch + oc * P + p);
+                    data[(p * out_ch + oc) * H + h] = read_fn(h * P * out_ch + oc * P + p);
                 }
             }
         }
@@ -246,7 +247,8 @@ static struct ggml_tensor * dit_load_proj_out_w(WeightCtx *         wctx,
                 name.c_str());
         exit(1);
     }
-    wctx->pending.push_back({ dst, buf.data(), n * sizeof(float), 0 });
+    wctx->pending.push_back({ dst, data, n * sizeof(float), 0 });
+    wctx->staging.push_back(std::move(buf));
     return dst;
 }
 

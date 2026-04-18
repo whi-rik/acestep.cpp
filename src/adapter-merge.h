@@ -445,9 +445,9 @@ static bool adapter_merge_on_backend(WeightCtx *                                
     ggml_backend_graph_compute(backend, graph);
 
     // allocate a staging slot sized for the native encoded weight, then download
-    size_t n_floats = (base_nb + sizeof(float) - 1) / sizeof(float);
-    wctx->staging.emplace_back(n_floats);
-    void * merged_buf = wctx->staging.back().data();
+    size_t n_floats    = (base_nb + sizeof(float) - 1) / sizeof(float);
+    auto   staging_buf = std::make_unique<float[]>(n_floats);
+    void * merged_buf  = staging_buf.get();
 
     if (encode_ok) {
         // download straight into staging in native type, zero host postprocess
@@ -467,6 +467,7 @@ static bool adapter_merge_on_backend(WeightCtx *                                
         pc->src    = merged_buf;
         pc->nbytes = merged_bytes;
     }
+    wctx->staging.push_back(std::move(staging_buf));
 
     ggml_backend_buffer_free(buf);
     ggml_free(ctx);

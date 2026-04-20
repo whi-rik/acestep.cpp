@@ -53,12 +53,6 @@ struct AceRequest {
     float repainting_start;  // 0
     float repainting_end;    // -1
 
-    // repaint/lego region quality (Python _resolve_repaint_config).
-    // 0.0 = conservative (max source preservation).
-    // 0.5 = balanced (default).
-    // 1.0 = aggressive (pure diffusion, no injection).
-    float repaint_strength;  // 0.5
-
     // task type: one of text2music, cover, cover-nofsq, repaint, lego, extract, complete.
     // Default: text2music.
     std::string task_type;  // "text2music"

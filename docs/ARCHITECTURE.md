@@ -435,27 +435,24 @@ Region coordinates are resolved in a unified block after mode routing:
 source audio has been padded with silence before VAE encoding, so T_cover
 and all downstream latent operations naturally reflect the extended canvas.
 
-Three mechanisms stack on top of each other when a repaint region is active:
+Two mechanisms do the work when a repaint region is active:
 
-1. **Step injection** (denoising loop, first 50% of steps): frames outside the
-   region are forced back to `t_next * noise + (1 - t_next) * src_latents` at each
-   step. This prevents the DiT from drifting outside the preserved zone.
-   For repaint: src_latents = full source (prevents decay of preserved content).
-   For lego: same formula, src = full backing track.
+1. **DiT context conditioning**: the `context_latents` tensor fed to the DiT
+   via cross-attention carries the full source latents with silence pasted
+   inside [t0, t1), paired with a binary mask (1.0 inside, 0.0 outside). The
+   DiT was trained on this exact shape and natively regenerates the silenced
+   zone. Flow matching runs as a generic denoising loop, unaware of repaint.
 
-2. **Latent boundary blend** (post-generation, pre-VAE): 12-frame linear crossfade
-   at region edges. Outside-zone latents blend from generated toward source.
-   Formula: `output[t] = m * generated[t] + (1-m) * src[t]`
-   where m ramps 0->1 approaching the zone boundary.
+2. **Waveform splice** (post-VAE decode): replaces non-region audio samples
+   with the original PCM from `src_audio` (interleaved input), with a fixed
+   10ms linear crossfade at zone edges. Guarantees bit-exact preservation
+   outside the zone (no VAE roundtrip), critical for mastering-grade use.
+   Skipped if region covers the full duration.
 
-3. **Waveform splice** (post-VAE decode): replaces non-region audio samples with
-   the original PCM from `src_audio` (interleaved input), with a 25ms linear
-   crossfade at zone edges. Eliminates VAE reconstruction artifacts in preserved
-   regions. Skipped if region covers the full duration.
-
-Key difference repaint vs lego: repaint silences the zone in the DiT context src
-(so the DiT generates fresh content there). Lego keeps the full backing track in
-context even inside the zone (DiT generates a new layer that harmonizes with it).
+Key difference repaint vs lego: repaint silences the zone in the DiT context
+src (so the DiT generates fresh content there). Lego keeps the full backing
+track in context even inside the zone (DiT generates a new layer that
+harmonizes with it).
 
 ### CLI scope
 
@@ -499,7 +496,6 @@ their own, but without caption the LLM has nothing to work from.
     "cover_noise_strength": 0.0,
     "repainting_start":     0,
     "repainting_end":       -1,
-    "repaint_strength":     0.5,
     "task_type":            "text2music",
     "track":                "",
     "infer_method":         "ode",

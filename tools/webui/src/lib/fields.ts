@@ -43,7 +43,6 @@ export const FIELDS: readonly FieldDef[] = [
 	{ key: 'shift', section: 'flow', type: 'num' },
 	{ key: 'audio_cover_strength', section: 'flow', type: 'num' },
 	{ key: 'cover_noise_strength', section: 'flow', type: 'num' },
-	{ key: 'repaint_strength', section: 'flow', type: 'num' },
 	{ key: 'repainting_start', section: 'flow', type: 'num' },
 	{ key: 'repainting_end', section: 'flow', type: 'num' },
 	{ key: 'infer_method', section: 'flow', type: 'str' },

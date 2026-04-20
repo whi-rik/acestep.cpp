@@ -41,7 +41,6 @@ void request_init(AceRequest * r) {
     r->cover_noise_strength = 0.0f;
     r->repainting_start     = 0.0f;
     r->repainting_end       = -1.0f;
-    r->repaint_strength     = 0.5f;
     r->task_type            = TASK_TEXT2MUSIC;
     r->track                = "";
     r->infer_method         = INFER_ODE;
@@ -160,9 +159,6 @@ static void request_parse_obj(yyjson_val * obj, AceRequest * r) {
     }
     if ((v = yyjson_obj_get(obj, "repainting_end")) && yyjson_is_num(v)) {
         r->repainting_end = (float) yyjson_get_num(v);
-    }
-    if ((v = yyjson_obj_get(obj, "repaint_strength")) && yyjson_is_num(v)) {
-        r->repaint_strength = (float) yyjson_get_num(v);
     }
     if ((v = yyjson_obj_get(obj, "peak_clip")) && yyjson_is_num(v)) {
         r->peak_clip = (int) yyjson_get_num(v);
@@ -381,9 +377,6 @@ static yyjson_mut_doc * request_build_doc(const AceRequest * r, bool sparse) {
     if (all || r->repainting_end != def.repainting_end) {
         yyjson_mut_obj_add_real(doc, root, "repainting_end", r->repainting_end);
     }
-    if (all || r->repaint_strength != def.repaint_strength) {
-        yyjson_mut_obj_add_real(doc, root, "repaint_strength", r->repaint_strength);
-    }
     // task_type is always emitted: it is the single source of truth for the
     // request and must be explicit in any round trip.
     yyjson_mut_obj_add_str(doc, root, "task_type", r->task_type.c_str());
@@ -455,8 +448,7 @@ void request_dump(const AceRequest * r, FILE * f) {
                 r->cover_noise_strength);
     }
     if (r->repainting_start != 0.0f || r->repainting_end >= 0.0f) {
-        fprintf(f, "[Request] repaint: start=%.1f end=%.1f strength=%.2f\n", r->repainting_start, r->repainting_end,
-                r->repaint_strength);
+        fprintf(f, "[Request] repaint: start=%.1f end=%.1f\n", r->repainting_start, r->repainting_end);
     }
     fprintf(f, "[Request] task_type: %s\n", r->task_type.c_str());
     if (!r->track.empty()) {

@@ -179,24 +179,6 @@ static bool adjust_region_coords(SynthState & s, int src_len) {
     return true;
 }
 
-// Repaint quality: injection ratio, crossfade frames, wav crossfade seconds
-// from rr.repaint_strength. Repaint and lego-region call this.
-static void resolve_repaint_quality(SynthState & s) {
-    float rs = s.rr.repaint_strength;
-    if (rs < 0.0f) {
-        rs = 0.0f;
-    }
-    if (rs > 1.0f) {
-        rs = 1.0f;
-    }
-    float inv                  = 1.0f - rs;
-    s.repaint_injection_ratio  = inv;
-    s.repaint_crossfade_frames = (int) (25.0f * inv + 0.5f);
-    s.repaint_wav_cf_sec       = 0.05f * inv;
-    fprintf(stderr, "[Synth-Run] repaint_strength=%.2f -> injection=%.2f, crossfade=%d frames, wav_cf=%.0fms\n", rs,
-            s.repaint_injection_ratio, s.repaint_crossfade_frames, s.repaint_wav_cf_sec * 1000.0f);
-}
-
 // Uppercase track name for instruction templates, warn on unknown names.
 static std::string prepare_track(const std::string & track, const char * label) {
     std::string upper = track;
@@ -270,7 +252,7 @@ static int run_tail(AceSynth *         ctx,
         return -1;
     }
     ops_build_context_silence(ctx, batch_n, s);
-    ops_init_noise_and_repaint(ctx, reqs, batch_n, s);
+    ops_init_noise(ctx, reqs, batch_n, s);
     if (ops_dit_generate(ctx, batch_n, s, cancel, cancel_data) != 0) {
         return -1;
     }
@@ -395,7 +377,6 @@ static AceSynthJob * run_repaint(AceSynth *         ctx,
     s.is_repaint         = true;
     s.use_source_context = true;
     s.instruction_str    = DIT_INSTR_REPAINT;
-    resolve_repaint_quality(s);
 
     const float * enc_audio = NULL;
     int           enc_len   = 0;
@@ -440,9 +421,6 @@ static AceSynthJob * run_lego(AceSynth *         ctx,
     s.instruction_str       = dit_instr_lego(track_upper);
     fprintf(stderr, "[Synth-Run] task=%s\n", reqs[0].task_type.c_str());
     warn_if_turbo_stem(ctx, "lego");
-    if (s.is_lego_region) {
-        resolve_repaint_quality(s);
-    }
 
     const float * enc_audio = src_audio;
     int           enc_len   = src_len;

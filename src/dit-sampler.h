@@ -138,24 +138,19 @@ static int dit_ggml_generate(DiTGGML *           model,
                              int                 num_steps,
                              const float *       schedule,
                              float *             output,
-                             float               guidance_scale       = 1.0f,
-                             const DebugDumper * dbg                  = nullptr,
-                             const float *       context_switch       = nullptr,
-                             int                 cover_steps          = -1,
-                             bool (*cancel)(void *)                   = nullptr,
-                             void *          cancel_data              = nullptr,
-                             const int *     real_S                   = nullptr,
-                             const int *     real_enc_S               = nullptr,
-                             const float *   enc_switch               = nullptr,
-                             const int *     real_enc_S_switch        = nullptr,
-                             const float *   repaint_src              = nullptr,
-                             int             repaint_t0               = 0,
-                             int             repaint_t1               = 0,
-                             float           repaint_injection_ratio  = 0.5f,
-                             int             repaint_crossfade_frames = 0,
-                             bool            use_sde                  = false,
-                             const int64_t * seeds                    = nullptr,
-                             bool            use_batch_cfg            = true) {
+                             float               guidance_scale = 1.0f,
+                             const DebugDumper * dbg            = nullptr,
+                             const float *       context_switch = nullptr,
+                             int                 cover_steps    = -1,
+                             bool (*cancel)(void *)             = nullptr,
+                             void *          cancel_data        = nullptr,
+                             const int *     real_S             = nullptr,
+                             const int *     real_enc_S         = nullptr,
+                             const float *   enc_switch         = nullptr,
+                             const int *     real_enc_S_switch  = nullptr,
+                             bool            use_sde            = false,
+                             const int64_t * seeds              = nullptr,
+                             bool            use_batch_cfg      = true) {
     DiTGGMLConfig & c       = model->cfg;
     int             Oc      = c.out_channels;      // 64
     int             ctx_ch  = c.in_channels - Oc;  // 128
@@ -609,26 +604,6 @@ static int dit_ggml_generate(DiTGGML *           model,
                     xt[i] -= vt[i] * dt;
                 }
             }
-
-            // repaint injection: replace preserved regions with noised source.
-            // xt[outside mask] = t_next * noise + (1 - t_next) * clean_src
-            // active for the first (injection_ratio * num_steps) steps.
-            // Python: round(repaint_injection_ratio * num_steps)
-            if (repaint_src && repaint_t1 > repaint_t0) {
-                int injection_cutoff = (int) (repaint_injection_ratio * (float) num_steps + 0.5f);
-                if (step < injection_cutoff) {
-                    for (int b = 0; b < N; b++) {
-                        for (int t = 0; t < T; t++) {
-                            if (t < repaint_t0 || t >= repaint_t1) {
-                                for (int ch = 0; ch < Oc; ch++) {
-                                    int idx = b * n_per + t * Oc + ch;
-                                    xt[idx] = t_next * noise[idx] + (1.0f - t_next) * repaint_src[t * Oc + ch];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // debug dump (sample 0 only)
@@ -644,37 +619,6 @@ static int dit_ggml_generate(DiTGGML *           model,
         }
 
         fprintf(stderr, "[DiT] Step %d/%d t=%.3f\n", step + 1, num_steps, t_curr);
-    }
-
-    // Boundary blend: smooth repaint zone edges in latent space.
-    // Python: apply_repaint_boundary_blend(x_gen, clean_src, repaint_mask, crossfade_frames)
-    // soft_mask[t] = 1.0 inside [t0,t1), ramp at edges, 0.0 outside.
-    // x_gen[t] = soft_mask[t]*x_gen[t] + (1-soft_mask[t])*repaint_src[t]
-    if (repaint_src && repaint_t1 > repaint_t0 && repaint_crossfade_frames > 0) {
-        int cf         = repaint_crossfade_frames;
-        int fade_start = repaint_t0 - cf > 0 ? repaint_t0 - cf : 0;
-        int fade_end   = repaint_t1 + cf < T ? repaint_t1 + cf : T;
-        for (int t = fade_start; t < fade_end; t++) {
-            if (t >= repaint_t0 && t < repaint_t1) {
-                continue;  // inside zone: keep generated output unchanged
-            }
-            float m;
-            if (t < repaint_t0) {
-                // left ramp: [fade_start, t0) -> 0..1 excluding endpoints
-                int rl = repaint_t0 - fade_start;
-                m      = (float) (t - fade_start + 1) / (float) (rl + 1);
-            } else {
-                // right ramp: [t1, fade_end) -> 1..0 excluding endpoints
-                int rl = fade_end - repaint_t1;
-                m      = (float) (fade_end - t) / (float) (rl + 1);
-            }
-            for (int b = 0; b < N; b++) {
-                for (int ch = 0; ch < Oc; ch++) {
-                    int idx     = b * n_per + t * Oc + ch;
-                    output[idx] = m * output[idx] + (1.0f - m) * repaint_src[t * Oc + ch];
-                }
-            }
-        }
     }
 
     // Batch diagnostic: report per-sample stats to catch corruption

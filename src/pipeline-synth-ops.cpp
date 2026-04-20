@@ -635,7 +635,7 @@ void ops_build_context_silence(const AceSynth * ctx, int batch_n, SynthState & s
     }
 }
 
-void ops_init_noise_and_repaint(const AceSynth * ctx, const AceRequest * reqs, int batch_n, SynthState & s) {
+void ops_init_noise(const AceSynth * ctx, const AceRequest * reqs, int batch_n, SynthState & s) {
     // Generate N s.noise samples (Philox4x32-10, matches torch.randn on CUDA with bf16).
     // Each batch item uses its own seed from the request.
     s.noise.resize(batch_n * s.Oc * s.T);
@@ -707,17 +707,6 @@ void ops_init_noise_and_repaint(const AceSynth * ctx, const AceRequest * reqs, i
 
     fprintf(stderr, "[Init-Noise] Starting: T=%d, S=%d, enc_S=%d, steps=%d, batch=%d%s\n", s.T, s.S, s.enc_S,
             s.num_steps, batch_n, s.use_source_context ? " (cover)" : "");
-
-    // repaint/lego-region injection buffer: full cover latents padded with silence.
-    // used for step injection and boundary blend in both repaint and lego-region modes.
-    if (s.is_repaint || s.is_lego_region) {
-        s.repaint_src.resize(s.T * s.Oc);
-        for (int t = 0; t < s.T; t++) {
-            const float * src =
-                (t < s.T_cover) ? s.cover_latents.data() + t * s.Oc : ctx->meta->silence_full.data() + t * s.Oc;
-            memcpy(s.repaint_src.data() + t * s.Oc, src, s.Oc * sizeof(float));
-        }
-    }
 }
 
 int ops_dit_generate(const AceSynth * ctx, int batch_n, SynthState & s, bool (*cancel)(void *), void * cancel_data) {
@@ -732,14 +721,13 @@ int ops_dit_generate(const AceSynth * ctx, int batch_n, SynthState & s, bool (*c
     }
 
     s.timer.reset();
-    int dit_rc = dit_ggml_generate(
-        dit, s.noise.data(), s.context.data(), s.enc_hidden.data(), s.enc_S, s.T, batch_n, s.num_steps,
-        s.schedule.data(), s.output.data(), s.guidance_scale, &s.dbg,
-        s.context_silence.empty() ? nullptr : s.context_silence.data(), s.cover_steps, cancel, cancel_data,
-        s.per_S.data(), s.per_enc_S.data(), s.enc_hidden_nc.empty() ? nullptr : s.enc_hidden_nc.data(),
-        s.per_enc_S_nc_final.empty() ? nullptr : s.per_enc_S_nc_final.data(),
-        s.repaint_src.empty() ? nullptr : s.repaint_src.data(), s.repaint_t0, s.repaint_t1, s.repaint_injection_ratio,
-        s.repaint_crossfade_frames, s.use_sde, s.seeds.data(), ctx->params.use_batch_cfg);
+    int dit_rc = dit_ggml_generate(dit, s.noise.data(), s.context.data(), s.enc_hidden.data(), s.enc_S, s.T, batch_n,
+                                   s.num_steps, s.schedule.data(), s.output.data(), s.guidance_scale, &s.dbg,
+                                   s.context_silence.empty() ? nullptr : s.context_silence.data(), s.cover_steps,
+                                   cancel, cancel_data, s.per_S.data(), s.per_enc_S.data(),
+                                   s.enc_hidden_nc.empty() ? nullptr : s.enc_hidden_nc.data(),
+                                   s.per_enc_S_nc_final.empty() ? nullptr : s.per_enc_S_nc_final.data(), s.use_sde,
+                                   s.seeds.data(), ctx->params.use_batch_cfg);
     if (dit_rc != 0) {
         return -1;
     }
@@ -806,11 +794,11 @@ int ops_vae_decode_and_splice(const AceSynth * ctx,
         out[b].sample_rate = 48000;
 
         // Waveform splice: replace non-repaint regions with original source audio.
-        // Python: apply_repaint_waveform_splice (when mode != aggressive)
         // mask[s] = 1.0 inside repaint region, 0.0 outside, linear ramp at edges.
-        // result = mask * pred + (1-mask) * src  [planar stereo: L:s.T, R:s.T]
+        // result = mask * pred + (1.0 - mask) * src  [planar stereo: L:s.T, R:s.T]
+        // 10 ms crossfade kills the click at the splice joints, inaudible.
         bool have_repaint_region = s.is_repaint || s.is_lego_region;
-        if (have_repaint_region && src_audio) {  // always splice (non-aggressive)
+        if (have_repaint_region && src_audio) {
             int T_splice = out[b].n_samples < src_len ? out[b].n_samples : src_len;
             int start_s  = (int) (s.rs * 48000.0f);
             int end_s    = (int) (s.re * 48000.0f);
@@ -818,7 +806,7 @@ int ops_vae_decode_and_splice(const AceSynth * ctx,
             end_s        = end_s < start_s ? start_s : (end_s > T_splice ? T_splice : end_s);
             // skip splice if region covers everything
             if (start_s > 0 || end_s < T_splice) {
-                int cf_s       = (int) (s.repaint_wav_cf_sec * 48000.0f);
+                int cf_s       = 480;  // 10 ms at 48 kHz
                 int fade_start = start_s - cf_s > 0 ? start_s - cf_s : 0;
                 int fade_end   = end_s + cf_s < T_splice ? end_s + cf_s : T_splice;
                 for (int ch = 0; ch < 2; ch++) {
@@ -828,15 +816,15 @@ int ops_vae_decode_and_splice(const AceSynth * ctx,
                         pred[si] = src_audio[(size_t) si * 2 + ch];
                     }
                     for (int si = fade_start; si < start_s; si++) {
-                        // left ramp: 0->1 toward repaint zone (excl endpoints)
+                        // left ramp: 0 to 1 toward repaint zone (excl endpoints)
                         int   rl  = start_s - fade_start;
                         float m   = (float) (si - fade_start + 1) / (float) (rl + 1);
                         float src = src_audio[(size_t) si * 2 + ch];
                         pred[si]  = m * pred[si] + (1.0f - m) * src;
                     }
-                    // [start_s, end_s): keep generated s.output as-is (mask=1)
+                    // [start_s, end_s): keep generated s.output as is (mask=1)
                     for (int si = end_s; si < fade_end; si++) {
-                        // right ramp: 1->0 away from repaint zone (excl endpoints)
+                        // right ramp: 1 to 0 away from repaint zone (excl endpoints)
                         int   rl  = fade_end - end_s;
                         float m   = (float) (fade_end - si) / (float) (rl + 1);
                         float src = src_audio[(size_t) si * 2 + ch];
@@ -846,8 +834,7 @@ int ops_vae_decode_and_splice(const AceSynth * ctx,
                         pred[si] = src_audio[(size_t) si * 2 + ch];
                     }
                 }
-                fprintf(stderr, "[WAV-Splice Batch%d] wav splice %.1fs-%.1fs cf=%.0fms\n", b, s.rs, s.re,
-                        s.repaint_wav_cf_sec * 1000.0f);
+                fprintf(stderr, "[WAV-Splice Batch%d] wav splice %.1fs..%.1fs cf=10ms\n", b, s.rs, s.re);
             }
         }
     }

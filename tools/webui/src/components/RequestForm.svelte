@@ -803,13 +803,6 @@
 					/></label
 				>
 				<label
-					>Repaint strength <input
-						type="text"
-						placeholder={ph(d?.repaint_strength)}
-						bind:value={app.request.repaint_strength}
-					/></label
-				>
-				<label
 					>Repaint start <input
 						type="text"
 						placeholder={ph(d?.repainting_start)}
